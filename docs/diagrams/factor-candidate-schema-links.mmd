@@ -1,0 +1,45 @@
+flowchart LR
+  %% Factor candidate schema relationship map.
+  %% Candidate definition stays portable; experimental evidence stays contextual.
+
+  candidate["Candidate Definition<br/>candidate_factors/candidates.jsonl<br/><br/>PK: candidate_id<br/>name<br/>expression<br/>expected_direction<br/>hypothesis<br/>category<br/>lookback_days<br/>created_at<br/>notes"]
+
+  exp["Experiment Config<br/>configs/*.toml<br/><br/>PK: experiment_id<br/>universe<br/>date_start / date_end<br/>allowed_fields<br/>allowed_functions<br/>allowed_windows<br/>horizons<br/>preprocess config<br/>gate config ref"]
+
+  dataset["Dataset Manifest<br/>datasets/{dataset_id}/manifest.json<br/><br/>PK: dataset_id<br/>FK: experiment_id<br/>source<br/>source_universe_key<br/>date_start / date_end<br/>adjustment<br/>forward_return_definition<br/>file hashes"]
+
+  run["Run Manifest<br/>runs/{run_id}/manifest.json<br/><br/>PK: run_id<br/>FK: experiment_id<br/>FK: dataset_id<br/>candidate_file_hash<br/>config_hash<br/>gate_config_hash<br/>tool_version / git commit<br/>started_at / finished_at"]
+
+  result["Candidate Run Result<br/>runs/{run_id}/results/candidate_results.jsonl<br/><br/>FK: run_id<br/>FK: candidate_id<br/>status<br/>failure_bucket<br/>best_horizon<br/>best_horizon_score<br/>failed_rules<br/>details"]
+
+  metrics["Metrics / IC Series<br/>runs/{run_id}/results/*.parquet<br/><br/>FK: run_id<br/>FK: candidate_id<br/>horizon<br/>IC / RankIC / ICIR<br/>coverage<br/>effective_trade_days<br/>quantile returns<br/>long_short_return<br/>monotonicity"]
+
+  registry["Candidate Registry<br/>candidate_factors/registry.jsonl<br/><br/>FK: candidate_id<br/>FK: experiment_id<br/>FK: dataset_id<br/>FK: run_id<br/>status = candidate_pass<br/>best_horizon<br/>best_horizon_score<br/>registered_at"]
+
+  candidate -- "candidate_id" --> result
+  candidate -- "candidate_id" --> metrics
+  candidate -- "candidate_id" --> registry
+
+  exp -- "experiment_id" --> dataset
+  exp -- "experiment_id" --> run
+  exp -- "experiment_id" --> registry
+
+  dataset -- "dataset_id" --> run
+  dataset -- "dataset_id" --> registry
+
+  run -- "run_id" --> result
+  run -- "run_id" --> metrics
+  run -- "run_id" --> registry
+
+  result -- "summary evidence" --> registry
+  metrics -- "detailed evidence" --> result
+
+  classDef definition fill:#eef6ff,stroke:#2563eb,color:#0f172a,stroke-width:1px;
+  classDef context fill:#f7fee7,stroke:#65a30d,color:#1f2937,stroke-width:1px;
+  classDef evidence fill:#fff7ed,stroke:#ea580c,color:#1f2937,stroke-width:1px;
+  classDef index fill:#f5f3ff,stroke:#7c3aed,color:#1f2937,stroke-width:1px;
+
+  class candidate definition;
+  class exp,dataset,run context;
+  class result,metrics evidence;
+  class registry index;

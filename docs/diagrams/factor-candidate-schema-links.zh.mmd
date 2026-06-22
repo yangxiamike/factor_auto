@@ -1,0 +1,56 @@
+flowchart LR
+  %% 因子候选与实验记录的数据结构关系。
+  %% 核心边界：因子定义可迁移；实验结果带上下文；Registry 只做通过索引。
+
+  candidate["1. 因子候选定义 Candidate<br/>candidate_factors/candidates.jsonl<br/><br/>负责回答：这个因子是什么？<br/><br/>PK: candidate_id<br/>expression<br/>expected_direction<br/>hypothesis<br/>category<br/><br/>不放：universe / 日期 / gate / 指标"]
+
+  exp["2. 实验配置 Experiment Config<br/>configs/*.toml<br/><br/>负责回答：这次实验怎么测？<br/><br/>PK: experiment_id<br/>universe<br/>date_start / date_end<br/>allowed_fields<br/>horizons<br/>gate_config"]
+
+  dataset["3. 冻结数据 Dataset Manifest<br/>datasets/{dataset_id}/manifest.json<br/><br/>负责回答：实际用的是哪份数据？<br/><br/>PK: dataset_id<br/>FK: experiment_id<br/>source<br/>date_start / date_end<br/>forward_return_definition<br/>file_hashes"]
+
+  run["4. 运行记录 Run Manifest<br/>runs/{run_id}/manifest.json<br/><br/>负责回答：一次评价运行的上下文是什么？<br/><br/>PK: run_id<br/>FK: experiment_id<br/>FK: dataset_id<br/>candidate_file_hash<br/>config_hash<br/>tool_version<br/>started_at / finished_at"]
+
+  result["5. 候选运行结果 Candidate Result<br/>runs/{run_id}/results/candidate_results.jsonl<br/><br/>负责回答：某个因子在这次 run 的状态如何？<br/><br/>FK: run_id<br/>FK: candidate_id<br/>status<br/>best_horizon<br/>score<br/>failed_rules"]
+
+  metrics["6. 详细指标 Metrics / IC Series<br/>runs/{run_id}/results/*.parquet<br/><br/>负责回答：可复查的详细证据是什么？<br/><br/>FK: run_id<br/>FK: candidate_id<br/>horizon<br/>IC / RankIC / ICIR<br/>coverage<br/>long_short_return"]
+
+  registry["7. 通过索引 Registry<br/>candidate_factors/registry.jsonl<br/><br/>负责回答：哪些因子在哪次实验通过？<br/><br/>FK: candidate_id<br/>FK: experiment_id<br/>FK: dataset_id<br/>FK: run_id<br/>status = candidate_pass<br/><br/>只存通过摘要，不复制完整指标"]
+
+  principle1["边界 1<br/>Candidate 是因子本体<br/>不包含实验环境"]
+  principle2["边界 2<br/>Run Artifacts 是实验事实<br/>绑定 run_id"]
+  principle3["边界 3<br/>Registry 是索引<br/>通过 ID 指向证据"]
+
+  candidate -- "candidate_id" --> result
+  candidate -- "candidate_id" --> metrics
+  candidate -- "candidate_id" --> registry
+
+  exp -- "experiment_id" --> dataset
+  exp -- "experiment_id" --> run
+  exp -- "experiment_id" --> registry
+
+  dataset -- "dataset_id" --> run
+  dataset -- "dataset_id" --> registry
+
+  run -- "run_id" --> result
+  run -- "run_id" --> metrics
+  run -- "run_id" --> registry
+
+  metrics -- "详细证据" --> result
+  result -- "pass 摘要" --> registry
+
+  candidate -.-> principle1
+  run -.-> principle2
+  metrics -.-> principle2
+  registry -.-> principle3
+
+  classDef definition fill:#eaf3ff,stroke:#2563eb,color:#0f172a,stroke-width:1px;
+  classDef context fill:#eef9ef,stroke:#238636,color:#0f172a,stroke-width:1px;
+  classDef evidence fill:#fff3e6,stroke:#ea580c,color:#0f172a,stroke-width:1px;
+  classDef index fill:#f4edff,stroke:#7c3aed,color:#0f172a,stroke-width:1px;
+  classDef principle fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-width:1px,stroke-dasharray: 4 3;
+
+  class candidate definition;
+  class exp,dataset,run context;
+  class result,metrics evidence;
+  class registry index;
+  class principle1,principle2,principle3 principle;

@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1040" viewBox="0 0 1600 1040" role="img" aria-labelledby="title desc">
+  <title id="title">Factor Candidate Schema Link Map</title>
+  <desc id="desc">A schema relationship map showing how candidate definitions, experiment configs, dataset manifests, run manifests, run results, metrics, and registry entries are linked by candidate_id, experiment_id, dataset_id, and run_id.</desc>
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#65a30d"/>
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 34px; font-weight: 760; fill: #0f172a; }
+      .subtitle { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 17px; fill: #475569; }
+      .box { rx: 12; ry: 12; stroke-width: 2; filter: url(#shadow); }
+      .definition { fill: #eef6ff; stroke: #2563eb; }
+      .context { fill: #f7fee7; stroke: #65a30d; }
+      .evidence { fill: #fff7ed; stroke: #ea580c; }
+      .index { fill: #f5f3ff; stroke: #7c3aed; }
+      .box-title { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 20px; font-weight: 760; fill: #0f172a; }
+      .path { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 13px; fill: #475569; }
+      .field { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; fill: #1f2937; }
+      .pk { font-weight: 760; fill: #111827; }
+      .edge { fill: none; stroke-width: 2.2; }
+      .edge-label { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; font-weight: 700; fill: #334155; }
+      .tag { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; font-weight: 700; }
+      .legend-text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; fill: #334155; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="1040"/>
+  <text class="title" x="60" y="58">Factor Candidate Schema Link Map</text>
+  <text class="subtitle" x="60" y="88">Candidate definitions stay portable. Experiment evidence stays contextual. Registry links them by stable IDs.</text>
+
+  <g transform="translate(60 118)">
+    <rect class="definition" x="0" y="0" width="18" height="18" rx="4"/>
+    <text class="legend-text" x="28" y="14">definition</text>
+    <rect class="context" x="128" y="0" width="18" height="18" rx="4"/>
+    <text class="legend-text" x="156" y="14">context</text>
+    <rect class="evidence" x="246" y="0" width="18" height="18" rx="4"/>
+    <text class="legend-text" x="274" y="14">evidence</text>
+    <rect class="index" x="374" y="0" width="18" height="18" rx="4"/>
+    <text class="legend-text" x="402" y="14">index</text>
+  </g>
+
+  <!-- Candidate Definition -->
+  <g id="candidate">
+    <rect class="box definition" x="60" y="180" width="330" height="288"/>
+    <text class="box-title" x="84" y="216">Candidate Definition</text>
+    <text class="path" x="84" y="242">candidate_factors/candidates.jsonl</text>
+    <text class="field pk" x="84" y="282">PK: candidate_id</text>
+    <text class="field" x="84" y="310">name</text>
+    <text class="field" x="84" y="334">expression</text>
+    <text class="field" x="84" y="358">expected_direction</text>
+    <text class="field" x="84" y="382">hypothesis</text>
+    <text class="field" x="84" y="406">category</text>
+    <text class="field" x="84" y="430">lookback_days</text>
+    <text class="field" x="84" y="454">created_at / notes</text>
+  </g>
+
+  <!-- Experiment Config -->
+  <g id="experiment">
+    <rect class="box context" x="470" y="162" width="330" height="306"/>
+    <text class="box-title" x="494" y="198">Experiment Config</text>
+    <text class="path" x="494" y="224">configs/*.toml</text>
+    <text class="field pk" x="494" y="264">PK: experiment_id</text>
+    <text class="field" x="494" y="292">universe</text>
+    <text class="field" x="494" y="316">date_start / date_end</text>
+    <text class="field" x="494" y="340">allowed_fields</text>
+    <text class="field" x="494" y="364">allowed_functions</text>
+    <text class="field" x="494" y="388">allowed_windows</text>
+    <text class="field" x="494" y="412">horizons</text>
+    <text class="field" x="494" y="436">preprocess / gate ref</text>
+  </g>
+
+  <!-- Dataset Manifest -->
+  <g id="dataset">
+    <rect class="box context" x="880" y="162" width="330" height="306"/>
+    <text class="box-title" x="904" y="198">Dataset Manifest</text>
+    <text class="path" x="904" y="224">datasets/{dataset_id}/manifest.json</text>
+    <text class="field pk" x="904" y="264">PK: dataset_id</text>
+    <text class="field pk" x="904" y="288">FK: experiment_id</text>
+    <text class="field" x="904" y="316">source / source_universe_key</text>
+    <text class="field" x="904" y="340">date_start / date_end</text>
+    <text class="field" x="904" y="364">adjustment</text>
+    <text class="field" x="904" y="388">forward_return_definition</text>
+    <text class="field" x="904" y="412">panel / returns file hashes</text>
+  </g>
+
+  <!-- Run Manifest -->
+  <g id="run">
+    <rect class="box context" x="470" y="568" width="330" height="306"/>
+    <text class="box-title" x="494" y="604">Run Manifest</text>
+    <text class="path" x="494" y="630">runs/{run_id}/manifest.json</text>
+    <text class="field pk" x="494" y="670">PK: run_id</text>
+    <text class="field pk" x="494" y="694">FK: experiment_id</text>
+    <text class="field pk" x="494" y="718">FK: dataset_id</text>
+    <text class="field" x="494" y="746">candidate_file_hash</text>
+    <text class="field" x="494" y="770">config_hash / gate_config_hash</text>
+    <text class="field" x="494" y="794">tool_version / git commit</text>
+    <text class="field" x="494" y="818">started_at / finished_at</text>
+  </g>
+
+  <!-- Candidate Result -->
+  <g id="result">
+    <rect class="box evidence" x="880" y="548" width="330" height="326"/>
+    <text class="box-title" x="904" y="584">Candidate Run Result</text>
+    <text class="path" x="904" y="610">runs/{run_id}/results/candidate_results.jsonl</text>
+    <text class="field pk" x="904" y="650">FK: run_id</text>
+    <text class="field pk" x="904" y="674">FK: candidate_id</text>
+    <text class="field" x="904" y="702">status</text>
+    <text class="field" x="904" y="726">failure_bucket</text>
+    <text class="field" x="904" y="750">best_horizon</text>
+    <text class="field" x="904" y="774">best_horizon_score</text>
+    <text class="field" x="904" y="798">failed_rules</text>
+    <text class="field" x="904" y="822">details</text>
+  </g>
+
+  <!-- Metrics -->
+  <g id="metrics">
+    <rect class="box evidence" x="1250" y="548" width="300" height="326"/>
+    <text class="box-title" x="1274" y="584">Metrics / IC Series</text>
+    <text class="path" x="1274" y="610">runs/{run_id}/results/*.parquet</text>
+    <text class="field pk" x="1274" y="650">FK: run_id</text>
+    <text class="field pk" x="1274" y="674">FK: candidate_id</text>
+    <text class="field" x="1274" y="702">horizon</text>
+    <text class="field" x="1274" y="726">IC / RankIC / ICIR</text>
+    <text class="field" x="1274" y="750">coverage</text>
+    <text class="field" x="1274" y="774">effective_trade_days</text>
+    <text class="field" x="1274" y="798">quantile returns</text>
+    <text class="field" x="1274" y="822">long_short / monotonicity</text>
+  </g>
+
+  <!-- Registry -->
+  <g id="registry">
+    <rect class="box index" x="1250" y="160" width="300" height="308"/>
+    <text class="box-title" x="1274" y="196">Candidate Registry</text>
+    <text class="path" x="1274" y="222">candidate_factors/registry.jsonl</text>
+    <text class="field pk" x="1274" y="262">FK: candidate_id</text>
+    <text class="field pk" x="1274" y="286">FK: experiment_id</text>
+    <text class="field pk" x="1274" y="310">FK: dataset_id</text>
+    <text class="field pk" x="1274" y="334">FK: run_id</text>
+    <text class="field" x="1274" y="362">status = candidate_pass</text>
+    <text class="field" x="1274" y="386">best_horizon</text>
+    <text class="field" x="1274" y="410">best_horizon_score</text>
+    <text class="field" x="1274" y="434">registered_at</text>
+  </g>
+
+  <!-- Edges -->
+  <path class="edge" d="M390 300 C430 300 430 690 880 690" stroke="#2563eb" marker-end="url(#arrow-blue)"/>
+  <text class="edge-label" x="395" y="330">candidate_id</text>
+  <path class="edge" d="M390 348 C500 500 1120 600 1250 666" stroke="#2563eb" marker-end="url(#arrow-blue)"/>
+  <text class="edge-label" x="654" y="517">candidate_id</text>
+  <path class="edge" d="M390 250 C730 80 1210 88 1250 260" stroke="#2563eb" marker-end="url(#arrow-blue)"/>
+  <text class="edge-label" x="770" y="128">candidate_id</text>
+
+  <path class="edge" d="M800 270 C832 270 846 270 880 270" stroke="#65a30d" marker-end="url(#arrow-green)"/>
+  <text class="edge-label" x="812" y="252">experiment_id</text>
+  <path class="edge" d="M635 468 L635 568" stroke="#65a30d" marker-end="url(#arrow-green)"/>
+  <text class="edge-label" x="646" y="524">experiment_id</text>
+  <path class="edge" d="M800 226 C1010 70 1242 90 1272 160" stroke="#65a30d" marker-end="url(#arrow-green)"/>
+  <text class="edge-label" x="1008" y="120">experiment_id</text>
+
+  <path class="edge" d="M1045 468 C1045 506 760 506 760 568" stroke="#65a30d" marker-end="url(#arrow-green)"/>
+  <text class="edge-label" x="886" y="506">dataset_id</text>
+  <path class="edge" d="M1210 314 L1250 314" stroke="#65a30d" marker-end="url(#arrow-green)"/>
+  <text class="edge-label" x="1214" y="296">dataset_id</text>
+
+  <path class="edge" d="M800 700 L880 700" stroke="#ea580c" marker-end="url(#arrow-orange)"/>
+  <text class="edge-label" x="812" y="682">run_id</text>
+  <path class="edge" d="M800 760 C970 900 1150 880 1250 790" stroke="#ea580c" marker-end="url(#arrow-orange)"/>
+  <text class="edge-label" x="1054" y="900">run_id</text>
+  <path class="edge" d="M760 568 C960 480 1218 442 1250 366" stroke="#7c3aed" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="1048" y="468">run_id</text>
+
+  <path class="edge" d="M1210 710 L1250 710" stroke="#ea580c" marker-end="url(#arrow-orange)"/>
+  <text class="edge-label" x="1214" y="692">detailed evidence</text>
+  <path class="edge" d="M1045 548 C1120 510 1200 470 1250 416" stroke="#7c3aed" marker-end="url(#arrow-purple)"/>
+  <text class="edge-label" x="1114" y="510">pass summary</text>
+
+  <text class="subtitle" x="60" y="960">Rule of thumb: Candidate = portable factor idea. Run artifacts = contextual experiment facts. Registry = pass index linking the two.</text>
+</svg>
