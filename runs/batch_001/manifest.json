@@ -1,0 +1,53 @@
+{
+  "run_id": "batch_001",
+  "experiment_id": "csi500_ohlcv_sandbox_v1",
+  "dataset_id": "sandbox_v1",
+  "config_hash": "sha256:a1a18707f27b506d4c4a7e3f59661db72d68e631e2cd05856e40ad5246eb453b",
+  "candidate_file_hash": "sha256:1d021758b74b6b11360709d038f2dc7b8067c2bccdf3a03c468a9a295c1ed508",
+  "gate_version": "candidate_gate_v1",
+  "tool_version": "0.1.0",
+  "candidate_count": 30,
+  "dataset_manifest": {
+    "dataset_id": "sandbox_v1",
+    "experiment_id": "csi500_ohlcv_sandbox_v1",
+    "created_at": "2026-06-22",
+    "source": "zer0share",
+    "source_path": "C:\\Users\\hp\\Documents\\zer0share",
+    "universe": "csi500",
+    "source_universe_key": "univ_trade_zz500",
+    "date_start": "2024-01-01",
+    "date_end": "2025-12-31",
+    "adjustment": "hfq",
+    "features": [
+      "open_hfq",
+      "high_hfq",
+      "low_hfq",
+      "close_hfq",
+      "volume"
+    ],
+    "preprocess_exposures": [
+      "industry",
+      "market_cap"
+    ],
+    "base_filters_inherited": [
+      "csi_membership",
+      "st",
+      "delisting",
+      "suspension",
+      "low_liquidity",
+      "low_volume",
+      "limit_up",
+      "limit_down"
+    ],
+    "forward_returns": [
+      "1d",
+      "5d",
+      "20d"
+    ],
+    "forward_return_definition": "next_open_to_open_v1"
+  },
+  "preprocess": {
+    "winsorize_mad_scale": 5.0,
+    "size_exposure": "log_market_cap"
+  }
+}

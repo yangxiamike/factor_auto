@@ -71,8 +71,13 @@ def _read_table_for_codes(
     return conn.execute(sql, [pattern, start_date, end_date]).fetchdf()
 
 
-def _read_ci_members(conn: duckdb.DuckDBPyConnection, data_dir: Path) -> pd.DataFrame:
-    pattern = str(data_dir / "stock" / "industry" / "ci_member" / "data.parquet")
+def _read_industry_members(
+    conn: duckdb.DuckDBPyConnection, data_dir: Path, industry_source: str
+) -> pd.DataFrame:
+    if industry_source.startswith("sw_"):
+        pattern = str(data_dir / "stock" / "industry" / "sw_member" / "data.parquet")
+    else:
+        pattern = str(data_dir / "stock" / "industry" / "ci_member" / "data.parquet")
     sql = """
         select
             ts_code,
@@ -113,7 +118,11 @@ def _build_panel(
     adj_factor = adj_factor.copy()
     adj_factor["trade_date"] = pd.to_datetime(adj_factor["trade_date"])
 
-    panel = grid.merge(universe[["trade_date", "ts_code", "in_universe"]], on=["trade_date", "ts_code"], how="left")
+    panel = grid.merge(
+        universe[["trade_date", "ts_code", "in_universe"]],
+        on=["trade_date", "ts_code"],
+        how="left",
+    )
     panel["in_universe"] = panel["in_universe"].fillna(False)
     panel = panel.merge(
         daily_kline[["trade_date", "ts_code", "open", "high", "low", "close", "vol"]],
@@ -131,15 +140,17 @@ def _build_panel(
         how="left",
     )
 
-    ci_members = ci_members.copy()
-    panel = panel.merge(ci_members, on="ts_code", how="left")
-    active_industry = panel[
-        (panel["in_date"].isna() | (panel["trade_date"] >= panel["in_date"]))
-        & (panel["out_date"].isna() | (panel["trade_date"] <= panel["out_date"]))
+    industry_lookup = grid.merge(ci_members.copy(), on="ts_code", how="left")
+    active_industry = industry_lookup[
+        (industry_lookup["in_date"].isna() | (industry_lookup["trade_date"] >= industry_lookup["in_date"]))
+        & (
+            industry_lookup["out_date"].isna()
+            | (industry_lookup["trade_date"] <= industry_lookup["out_date"])
+        )
     ].copy()
     active_industry = active_industry.sort_values(["trade_date", "ts_code", "in_date"])
     active_industry = active_industry.drop_duplicates(["trade_date", "ts_code"], keep="last")
-    panel = panel.drop(columns=["industry", "in_date", "out_date"], errors="ignore").merge(
+    panel = panel.merge(
         active_industry[["trade_date", "ts_code", "industry"]],
         on=["trade_date", "ts_code"],
         how="left",
@@ -225,7 +236,7 @@ def prepare_fixed_dataset(
             end_date,
             ["ts_code", "trade_date", "adj_factor"],
         )
-        ci_members = _read_ci_members(conn, source_data_dir)
+        ci_members = _read_industry_members(conn, source_data_dir, config.industry_source)
     finally:
         conn.close()
 

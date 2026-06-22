@@ -1,4 +1,4 @@
-# CSI500 OHLCV Sandbox v1 实验规格
+# 中证500 OHLCV Sandbox v1 实验规格
 
 ## 1. 定位
 
@@ -39,11 +39,11 @@ Codex 追加候选 DSL
 
 v1 固定做：
 
-- universe：CSI 500 / 中证 500 方向股票池。
+- universe：中证500方向股票池。
 - 日期：`2024-01-01` 到 `2025-12-31`。
 - 数据频率：日频。
 - 特征：后复权 OHLCV。
-- forward return：1d、3d、5d。
+- forward return：1d、5d、20d。
 - 评价预处理：行业中性化、市值中性化、winsorize、zscore。
 - 候选来源：Codex 手写 DSL 表达式。
 - 每轮候选数量：30。
@@ -73,7 +73,7 @@ datasets/sandbox_v1/
 
 ### 4.1 Universe
 
-实验 universe 使用 CSI 500 / 中证 500 方向股票池。
+实验 universe 使用中证500方向股票池。
 
 配置中使用逻辑名称：
 
@@ -81,11 +81,11 @@ datasets/sandbox_v1/
 universe = "csi500"
 ```
 
-manifest 必须记录实际 zer0share universe key。如果底层数据源的 key 不是 `csi500`，则由配置文件做映射，但实验文档仍以 `csi500` 作为 profile 名称。
+manifest 必须记录实际 zer0share universe key。如果底层数据源的 key 不是 `csi500`，则由配置文件做映射；实验文档以“中证500”作为业务 universe 名称，以 `csi500` 作为稳定 profile 标识。
 
 基础过滤原则：
 
-- CSI 方向股票池筛选，以及 ST、退市整理、停牌、低流动性、低成交量、涨停、跌停等基础过滤由 zer0share 的受控数据生成流程处理。
+- 中证500方向股票池筛选，以及 ST、退市整理、停牌、低流动性、低成交量、涨停、跌停等基础过滤由 zer0share 的受控数据生成流程处理。
 - 评价阶段不重复做动态 universe 过滤，也不根据候选因子值临时修改 universe。
 - 评价阶段只使用 `in_universe == true` 的样本。
 - universe membership 可以随日期变化，但必须由固定数据集显式给出。
@@ -137,8 +137,8 @@ volume
 trade_date
 ts_code
 fwd_ret_1d
-fwd_ret_3d
 fwd_ret_5d
+fwd_ret_20d
 ```
 
 forward return 定义：
@@ -174,7 +174,7 @@ fwd_ret_h = open_hfq[t + h + 1] / open_hfq[t + 1] - 1
   "features": ["open_hfq", "high_hfq", "low_hfq", "close_hfq", "volume"],
   "preprocess_exposures": ["industry", "market_cap"],
   "base_filters_inherited": ["csi_membership", "st", "delisting", "suspension", "low_liquidity", "low_volume", "limit_up", "limit_down"],
-  "forward_returns": ["1d", "3d", "5d"],
+  "forward_returns": ["1d", "5d", "20d"],
   "forward_return_definition": "next_open_to_open_v1"
 }
 ```
@@ -204,7 +204,7 @@ raw factor values
 - 行业暴露使用固定 dataset 中的 `industry` 字段。
 - 市值暴露使用固定 dataset 中的 `market_cap` 字段；`market_cap <= 0` 时该样本按市值暴露缺失处理。
 - 缺失值不填充；原始字段、因子值、行业、市值或 forward return 缺失时，该样本按缺失处理。
-- 评价阶段不做额外动态 universe 过滤；CSI、ST、退市整理、停牌、低流动性、低成交量、涨停、跌停等基础过滤应由 zer0share 数据生成阶段完成并写入 `in_universe` / manifest。
+- 评价阶段不做额外动态 universe 过滤；中证500、ST、退市整理、停牌、低流动性、低成交量、涨停、跌停等基础过滤应由 zer0share 数据生成阶段完成并写入 `in_universe` / manifest。
 
 ### 5.2 表达式计算
 
@@ -452,7 +452,7 @@ horizon_score_h =
 + 0.30 * monotonicity_component_h
 ```
 
-`best_horizon_score` 是 1d、3d、5d 中最大的 `horizon_score_h`。
+`best_horizon_score` 是 1d、5d、20d 中最大的 `horizon_score_h`。
 
 v1 的 score 故意偏简单。它的作用是筛出值得继续研究的 candidate，不是 production official gate。
 
@@ -475,7 +475,7 @@ runtime_error
   "failure_bucket": "gate_failed",
   "details": {
     "coverage_mean": 0.83,
-    "best_horizon": "5d",
+    "best_horizon": "20d",
     "best_horizon_score": 0.62,
     "ic_component": 0.31,
     "rankic_component": 0.78,
@@ -557,12 +557,12 @@ registry 示例：
   "experiment_id": "csi500_ohlcv_sandbox_v1",
   "run_id": "smoke_001",
   "status": "candidate_pass",
-  "best_horizon": "5d",
+  "best_horizon": "20d",
   "best_horizon_score": 1.2,
   "metrics": {
-    "ic_mean_5d": 0.011,
-    "rankic_mean_5d": 0.013,
-    "monotonicity_5d": 0.67,
+    "ic_mean_20d": 0.011,
+    "rankic_mean_20d": 0.013,
+    "monotonicity_20d": 0.67,
     "coverage_mean": 0.91,
     "complexity_score": 7
   },
@@ -622,13 +622,35 @@ Codex 不能：
 
 memory 不因为单个候选 pass 或 fail 就更新。
 
-## 16. 验收标准
+## 16. 实验输出清理
+
+为了支持 sandbox 测试和多次试跑，v1 必须提供清空实验输出的入口：
+
+```bash
+fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1 --yes
+```
+
+清理范围：
+
+- 删除 `runs/` 下属于 `csi500_ohlcv_sandbox_v1` 的 run artifacts。
+- 清空 `candidate_factors/registry.jsonl` 中属于 `csi500_ohlcv_sandbox_v1` 的 registry 记录。
+
+不会清理：
+
+- `candidate_factors/candidates.jsonl`，因为它是候选输入和审计记录。
+- `datasets/sandbox_v1/`，因为它是固定实验输入。
+- `configs/`，因为它是实验规则。
+- `codex/research_notes.md` 和 `codex/memory.md`，因为它们是人工研究记录；需要重置时应由维护者明确处理。
+
+未传 `--yes` 时，命令只能打印 dry-run 清单，不能真的删除文件或清空 registry。
+
+## 17. 验收标准
 
 v1 experiment 验收通过条件：
 
 1. 可以生成固定 `datasets/sandbox_v1`。
-2. dataset 覆盖 CSI 500 / 中证 500 方向股票池，日期范围为 2024-01-01 到 2025-12-31。
-3. dataset 包含后复权 OHLCV、universe membership、评价预处理暴露 `industry` / `market_cap`，以及 1d/3d/5d forward returns。
+2. dataset 覆盖中证500方向股票池，日期范围为 2024-01-01 到 2025-12-31。
+3. dataset 包含后复权 OHLCV、universe membership、评价预处理暴露 `industry` / `market_cap`，以及 1d/5d/20d forward returns。
 4. 评价阶段不直接访问 zer0share。
 5. Codex 只能追加 `candidates.jsonl`，并维护 `research_notes.md` 和 `memory.md`。
 6. 系统可以校验并评价每轮 30 个手写 DSL 候选。
@@ -637,10 +659,12 @@ v1 experiment 验收通过条件：
 9. 每次 run 的输出都写入 `runs/{run_id}/`。
 10. 通过 gate 的候选追加写入 `candidate_factors/registry.jsonl`。
 11. 未通过 gate 的候选不写入 registry。
-12. `official_factors/` 除文档外保持不变。
-13. 同一个 dataset、candidate JSONL、config 和 tool version 重复运行，应产生相同指标和 summary。
+12. `fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1 --yes` 可以清空 run artifacts 和 registry 结果。
+13. 清理命令不能删除 candidates、dataset、configs、research notes 或 memory。
+14. `official_factors/` 除文档外保持不变。
+15. 同一个 dataset、candidate JSONL、config 和 tool version 重复运行，应产生相同指标和 summary。
 
-## 17. 后续实验扩展
+## 18. 后续实验扩展
 
 v1.5 / v2 可以考虑：
 

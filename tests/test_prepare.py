@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pandas as pd
-
 from conftest import write_test_config_files
+
 from factor_autoresearch.config import load_experiment_config
 from factor_autoresearch.prepare import prepare_fixed_dataset
 
@@ -28,7 +28,7 @@ def test_prepare_fixed_dataset_from_fake_zer0share(tmp_path) -> None:
         pd.DataFrame(
             {
                 "trade_date": [trade_date, trade_date],
-                    "universe": ["fixture", "fixture"],
+                "universe": ["fixture", "fixture"],
                 "ts_code": ["000001.SZ", "000002.SZ"],
             }
         ).to_parquet(universe_dir / "data.parquet", index=False)

@@ -1,0 +1,32 @@
+2026-06-22 22:11:05,738 INFO factor_autoresearch.evaluate run=batch_001 candidate=- stage=batch starting evaluation batch
+2026-06-22 22:11:05,739 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0001_range_position stage=candidate evaluating candidate
+2026-06-22 22:11:13,549 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0002_intraday_return stage=candidate evaluating candidate
+2026-06-22 22:11:20,934 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0003_upper_shadow_pressure stage=candidate evaluating candidate
+2026-06-22 22:11:28,027 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0004_lower_shadow_support stage=candidate evaluating candidate
+2026-06-22 22:11:35,273 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0005_daily_range stage=candidate evaluating candidate
+2026-06-22 22:11:42,573 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0006_open_gap_strength stage=candidate evaluating candidate
+2026-06-22 22:11:49,998 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0007_open_gap_reversal stage=candidate evaluating candidate
+2026-06-22 22:11:58,266 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0008_volume_change_3d stage=candidate evaluating candidate
+2026-06-22 22:12:07,388 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0009_volume_change_5d stage=candidate evaluating candidate
+2026-06-22 22:12:15,923 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0010_volume_volatility stage=candidate evaluating candidate
+2026-06-22 22:12:23,800 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0011_log_volume stage=candidate evaluating candidate
+2026-06-22 22:12:30,866 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0012_short_vs_long_volume stage=candidate evaluating candidate
+2026-06-22 22:12:38,400 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0013_close_mom_3d stage=candidate evaluating candidate
+2026-06-22 22:12:45,647 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0014_close_mom_5d stage=candidate evaluating candidate
+2026-06-22 22:12:52,851 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0015_cross_sectional_mom_5d stage=candidate evaluating candidate
+2026-06-22 22:12:59,832 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0016_time_rank_mom stage=candidate evaluating candidate
+2026-06-22 22:13:37,035 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0017_mean_daily_return_5d stage=candidate evaluating candidate
+2026-06-22 22:13:44,781 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0018_mean_daily_return_10d stage=candidate evaluating candidate
+2026-06-22 22:13:52,000 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0019_reversal_3d stage=candidate evaluating candidate
+2026-06-22 22:13:58,877 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0020_reversal_5d stage=candidate evaluating candidate
+2026-06-22 22:14:05,563 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0021_daily_vol_5d stage=candidate evaluating candidate
+2026-06-22 22:14:12,350 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0022_daily_vol_10d stage=candidate evaluating candidate
+2026-06-22 22:14:19,265 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0023_range_vol_5d stage=candidate evaluating candidate
+2026-06-22 22:14:25,992 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0024_range_mean_5d stage=candidate evaluating candidate
+2026-06-22 22:14:32,791 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0025_gap_mean_5d stage=candidate evaluating candidate
+2026-06-22 22:14:39,476 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0026_gap_vol_5d stage=candidate evaluating candidate
+2026-06-22 22:14:46,574 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0027_body_over_range stage=candidate evaluating candidate
+2026-06-22 22:14:53,244 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0028_open_position_in_range stage=candidate evaluating candidate
+2026-06-22 22:15:00,525 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0029_volume_vs_20d_mean stage=candidate evaluating candidate
+2026-06-22 22:15:07,669 INFO factor_autoresearch.evaluate run=batch_001 candidate=fa_0030_volume_rank_minus_price_rank stage=candidate evaluating candidate
+2026-06-22 22:16:13,246 INFO factor_autoresearch.evaluate run=batch_001 candidate=- stage=batch evaluation batch completed

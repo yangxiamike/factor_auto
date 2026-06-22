@@ -1,5 +1,5 @@
-from pathlib import Path
 import logging
+from pathlib import Path
 
 from factor_autoresearch.logging_config import configure_logging
 

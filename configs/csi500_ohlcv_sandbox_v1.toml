@@ -26,7 +26,7 @@ preprocess_exposures = ["industry", "market_cap"]
 source = "zer0share"
 source_path = "C:/Users/hp/Documents/zer0share"
 source_universe_key = "univ_trade_zz500"
-industry_source = "ci_l1_name"
+industry_source = "sw_l1_name"
 base_filters_inherited = [
     "csi_membership",
     "st",

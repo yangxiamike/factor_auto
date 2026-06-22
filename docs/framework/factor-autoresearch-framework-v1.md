@@ -35,7 +35,7 @@ docs/framework/factor-autoresearch-framework-v1.md
 docs/experiments/factor-autoresearch-sandbox-v1.md
 ```
 
-本文件是 framework spec。`factor-autoresearch-sandbox-v1.md` 是第一轮 CSI500 OHLCV sandbox experiment spec。
+本文件是 framework spec。`factor-autoresearch-sandbox-v1.md` 是第一轮中证500 OHLCV sandbox experiment spec。
 
 ## 3. 核心分工
 
@@ -289,6 +289,26 @@ runs/{run_id}/
   logs/
     evaluate.log
 ```
+
+### 8.4 清空实验输出
+
+测试或试跑后，允许维护者通过 CLI 清空本实验产生的输出：
+
+```bash
+fm experiment clean \
+  --experiment-id {experiment_id} \
+  --yes
+```
+
+默认行为：
+
+- 删除 `runs/` 下属于该 experiment 的 run 输出，保留 `runs/.gitkeep`。
+- 清空 `candidate_factors/registry.jsonl` 中属于该 experiment 的 registry 记录。
+- 不删除 `candidate_factors/candidates.jsonl`。
+- 不删除 `datasets/`、`configs/`、`codex/research_notes.md` 或 `codex/memory.md`。
+- 未传 `--yes` 时只打印将要清理的内容，不执行删除或清空。
+
+这个命令用于把测试产生的 run artifacts 和 registry 结果清掉，让同一个 sandbox 可以从零开始重新跑。它不是数据准备命令，也不是候选管理命令。
 
 ## 9. Validate / Gate 轨迹
 

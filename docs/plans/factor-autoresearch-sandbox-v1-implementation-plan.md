@@ -18,7 +18,7 @@
 
 ## 2. 总体目标
 
-实现一个确定性 Python 工具链，让第一轮 CSI500 OHLCV 日频因子实验可以完整跑通：
+实现一个确定性 Python 工具链，让第一轮中证500 OHLCV 日频因子实验可以完整跑通：
 
 ```text
 Codex 追加候选 DSL
@@ -40,7 +40,7 @@ docs/
 ├── framework/
 │   └── factor-autoresearch-framework-v1.md       # 长期稳定的框架合同
 ├── experiments/
-│   └── factor-autoresearch-sandbox-v1.md         # 本轮 CSI500 sandbox 实验规格
+│   └── factor-autoresearch-sandbox-v1.md         # 本轮中证500 sandbox 实验规格
 └── plans/
     └── factor-autoresearch-sandbox-v1-implementation-plan.md
                                                        # 本实施计划
@@ -66,13 +66,14 @@ docs/
 | 候选输入 | JSONL | `candidate_factors/candidates.jsonl` | 追加友好，每行一个候选，适合审计 |
 | 表达式 DSL | 自定义受限 DSL + Python AST parser | 候选表达式解析、静态校验、复杂度计算 | 搜索空间小，安全边界清楚，v1 不需要完整量化框架 |
 | CLI | Typer | `fm dataset ...`、`fm factor ...` | 参数声明清楚，测试方便 |
+| 日志 | Python `logging` 标准库 + Typer/Rich 控制台输出 | run 级持久日志、CLI verbose 过程输出、错误追踪 | 标准库足够稳定，日志可落盘可测试；控制台输出适合人类实时观察 |
 | 统计 | scipy / statsmodels | RankIC、OLS 中性化 | 避免手写统计细节 |
 | 测试 | pytest | 单元测试和 smoke test | 简洁，适合模块化测试 |
 | 代码质量 | ruff | lint 和基础格式检查 | 快，配置轻 |
 
 本轮暂时不引入：
 
-- 分布式计算框架。两年 CSI500 日频数据规模不需要。
+- 分布式计算框架。两年中证500日频数据规模不需要。
 - 外部或状态型数据库。DuckDB 只作为嵌入式查询引擎读取 parquet 和 run artifacts，不保存 evaluator 状态。
 - QLib。v1 只需要固定数据集读取、受限 DSL 解析、因子评价和 artifact 合同，不引入完整量化研究平台。
 - 自动搜索引擎。v1 只支持 Codex 手写 DSL 候选。
@@ -113,6 +114,8 @@ docs/
 │   ├── metrics.py
 │   ├── gate.py
 │   ├── registry.py
+│   ├── logging_config.py
+│   ├── cleanup.py
 │   └── evaluate.py
 ├── candidate_factors/
 │   ├── candidates.jsonl
@@ -134,6 +137,8 @@ docs/
     ├── test_data_loader.py
     ├── test_preprocess_metrics.py
     ├── test_gate_registry.py
+    ├── test_logging_config.py
+    ├── test_cleanup.py
     ├── test_evaluate.py
     ├── test_cli.py
     └── test_smoke_run.py
@@ -219,7 +224,7 @@ class DataLoader:
 需要校验：
 
 - `panel.parquet` 必须有 spec 要求字段。
-- `forward_returns.parquet` 必须有 1d / 3d / 5d forward return。
+- `forward_returns.parquet` 必须有 1d / 5d / 20d forward return。
 - `(trade_date, ts_code)` 主键唯一。
 - Dataset Manifest 中的 `dataset_id`、`experiment_id` 能和 Experiment Config 对齐。
 
@@ -315,16 +320,16 @@ Candidate
 
 ```text
 runs/{run_id}/
-├── manifest.json
-├── summary.md
+├── manifest.json                     # 记录本次 run 的复现上下文
+├── summary.md                        # 给人和 Codex 看的结果摘要
 ├── factors/
-│   └── {candidate_id}.parquet
+│   └── {candidate_id}.parquet        # 单个候选的因子值明细
 ├── results/
-│   ├── candidate_results.jsonl
-│   ├── metrics.parquet
-│   └── ic_series.parquet
+│   ├── candidate_results.jsonl       # 每个候选的最终状态和结论
+│   ├── metrics.parquet               # 每个候选各 horizon 的汇总指标
+│   └── ic_series.parquet             # 每日 IC / RankIC 等时间序列
 └── logs/
-    └── evaluate.log
+    └── evaluate.log                  # 本次 evaluate 的运行日志
 ```
 
 人类审阅重点：
@@ -478,7 +483,7 @@ factor_z ~ industry dummies + log(market_cap)
 
 - 每天横截面有效样本数至少 100 才计算当日 IC / RankIC。
 - RankIC 和 monotonicity 是 gate 里的重要信号。
-- 指标命名要带 horizon 后缀，例如 `rankic_mean_5d`。
+- 指标命名要带 horizon 后缀，例如 `rankic_mean_20d`。
 
 #### `gate.py`
 
@@ -513,7 +518,7 @@ registry 记录示意：
   "dataset_id": "sandbox_v1",
   "experiment_id": "csi500_ohlcv_sandbox_v1",
   "run_id": "smoke_001",
-  "best_horizon": "5d",
+  "best_horizon": "20d",
   "best_horizon_score": 1.2
 }
 ```
@@ -524,7 +529,90 @@ registry 记录示意：
 - 只写 candidate_pass。
 - failed / invalid / error 只保存在 run artifacts。
 
-### 7.9 `cli.py`
+### 7.9 `logging_config.py`
+
+职责：统一配置 CLI 控制台日志和 run 级持久日志。
+
+核心 API：
+
+```python
+def configure_logging(
+    *,
+    run_dir: Path | None,
+    verbose: bool,
+    quiet: bool = False,
+) -> None:
+    ...
+```
+
+日志输出分两层：
+
+```text
+console
+  默认：只显示阶段级状态、最终摘要位置、错误提示
+  --verbose：显示数据读取、候选处理、指标计算、gate 决策等过程信息
+  --quiet：只显示错误和最终必要路径
+
+runs/{run_id}/logs/evaluate.log
+  始终记录完整过程
+  包含 run_id、candidate_id、stage、duration、status、error class/message
+  不受 --quiet 影响
+```
+
+日志级别约定：
+
+- `INFO`：阶段开始/完成、候选通过/失败、artifact 写入路径。
+- `DEBUG`：`--verbose` 时给人看的过程细节，例如候选数量、字段校验、单个 horizon 指标摘要。
+- `WARNING`：可恢复但需要注意的问题，例如某个交易日有效样本不足被跳过。
+- `ERROR`：单个 candidate 失败，写入 `candidate_results.jsonl` 后继续下一候选。
+- `CRITICAL`：run 无法继续，例如 dataset 缺失或 config 无法读取。
+
+人类审阅重点：
+
+- 日志是运行证据，不是替代 `summary.md` 的人类结论。
+- 控制台输出可以随 `--verbose` 变详细，但 `evaluate.log` 必须持续、完整、可追溯。
+- 日志不能泄露原始数据路径之外的敏感凭据；异常 detail 要可排查，但不 dump 大型 DataFrame。
+
+### 7.10 `cleanup.py`
+
+职责：清空测试或试跑产生的实验输出，让 sandbox 可以从零开始重新跑。
+
+核心 API：
+
+```python
+def clean_experiment_outputs(
+    *,
+    experiment_id: str,
+    runs_dir: Path,
+    registry_path: Path,
+    yes: bool,
+) -> CleanupReport:
+    ...
+```
+
+默认清理范围：
+
+- 删除 `runs/` 下 manifest 属于该 `experiment_id` 的 run 目录。
+- 保留 `runs/.gitkeep`。
+- 从 `candidate_factors/registry.jsonl` 中移除该 `experiment_id` 的记录；如果 v1 只有一个 experiment，则结果应为空文件。
+- 未传 `yes=True` 时只返回 dry-run report，不执行文件修改。
+
+禁止清理：
+
+- `candidate_factors/candidates.jsonl`。
+- `datasets/`。
+- `configs/`。
+- `codex/research_notes.md`。
+- `codex/memory.md`。
+- `official_factors/`。
+
+安全要求：
+
+- 所有删除目标必须 resolve 后仍在 repo 的 `runs/` 目录内。
+- registry 只能通过临时文件 + 原子替换方式改写，避免半写状态。
+- dry-run 输出要列出将删除的 run id、将移除的 registry 行数、不会触碰的输入文件。
+
+### 7.11 `cli.py`
 
 职责：暴露 `fm` 命令。
 
@@ -537,12 +625,21 @@ uv run fm dataset prepare-fixed \
 
 uv run fm factor validate \
   --dataset datasets/sandbox_v1 \
-  --candidates candidate_factors/candidates.jsonl
+  --candidates candidate_factors/candidates.jsonl \
+  --verbose
 
 uv run fm factor evaluate \
   --dataset datasets/sandbox_v1 \
   --candidates candidate_factors/candidates.jsonl \
-  --run-id smoke_001
+  --run-id smoke_001 \
+  --verbose
+
+uv run fm experiment clean \
+  --experiment-id csi500_ohlcv_sandbox_v1
+
+uv run fm experiment clean \
+  --experiment-id csi500_ohlcv_sandbox_v1 \
+  --yes
 ```
 
 人类审阅重点：
@@ -550,6 +647,8 @@ uv run fm factor evaluate \
 - CLI 是人和 Codex 都会调用的接口。
 - 参数名要和 spec 保持一致。
 - validate 不计算指标；evaluate 才计算指标。
+- `--verbose` 只影响控制台过程输出；run 级日志仍然持续写入 `runs/{run_id}/logs/evaluate.log`。
+- `experiment clean` 默认 dry-run；只有传 `--yes` 才清空 run artifacts 和 registry 结果。
 
 ## 8. 关键数据结构
 
@@ -599,7 +698,7 @@ uv run fm factor evaluate \
   "date_end": "2025-12-31",
   "allowed_fields": ["open_hfq", "high_hfq", "low_hfq", "close_hfq", "volume"],
   "allowed_windows": [1, 3, 5, 10, 20],
-  "horizons": ["1d", "3d", "5d"],
+  "horizons": ["1d", "5d", "20d"],
   "gate": {
     "version": "candidate_gate_v1"
   },
@@ -644,7 +743,10 @@ manifest 至少记录：
   "dataset_id": "sandbox_v1",
   "candidate_file_hash": "sha256:...",
   "config_hash": "sha256:...",
-  "tool_version": "0.1.0"
+  "tool_version": "0.1.0",
+  "log_file": "runs/smoke_001/logs/evaluate.log",
+  "logging_level_file": "DEBUG",
+  "logging_level_console": "INFO"
 }
 ```
 
@@ -658,7 +760,7 @@ run artifact 中每个候选都要有结果：
   "candidate_id": "fa_0001_range_position",
   "status": "candidate_pass",
   "failure_bucket": null,
-  "best_horizon": "5d",
+  "best_horizon": "20d",
   "best_horizon_score": 1.2,
   "details": {}
 }
@@ -687,7 +789,7 @@ metrics 至少包含：
 {
   "run_id": "smoke_001",
   "candidate_id": "fa_0001_range_position",
-  "horizon": "5d",
+  "horizon": "20d",
   "ic_mean": 0.012,
   "rankic_mean": 0.018,
   "icir": 0.42,
@@ -714,7 +816,7 @@ registry 记录示意：
   "dataset_id": "sandbox_v1",
   "experiment_id": "csi500_ohlcv_sandbox_v1",
   "run_id": "smoke_001",
-  "best_horizon": "5d",
+  "best_horizon": "20d",
   "best_horizon_score": 1.2
 }
 ```
@@ -1010,14 +1112,14 @@ tests/
 实现要点：
 
 - 按 `(trade_date, ts_code)` join factor 和 forward returns。
-- 对 1d / 3d / 5d 分别计算 IC、RankIC、ICIR、coverage、分层收益、多空收益、monotonicity。
+- 对 1d / 5d / 20d 分别计算 IC、RankIC、ICIR、coverage、分层收益、多空收益、monotonicity。
 - 记录 `effective_trade_days`。
 - 每日有效横截面样本数不足 100 时跳过当日 IC / RankIC。
 
 审阅提示：
 
 ```python
-rankic_mean_5d
+rankic_mean_20d
 # 这个值是 gate 重点使用的指标之一，命名必须稳定。
 ```
 
@@ -1063,7 +1165,45 @@ direction_sign = 1 if expected_direction == "positive" else -1
 uv run pytest tests/test_gate_registry.py -v
 ```
 
-### Task 10：Evaluate Orchestration
+### Task 10：Logging 基础设施
+
+目标：让所有 CLI 命令都有统一日志口径，尤其是 evaluate 的持续过程记录。
+
+涉及文件：
+
+```text
+factor_autoresearch/
+└── logging_config.py
+
+tests/
+└── test_logging_config.py
+```
+
+实现要点：
+
+- 提供 `configure_logging(run_dir, verbose, quiet=False)`。
+- console handler 写 stderr，默认短输出，`--verbose` 输出过程细节。
+- file handler 写 `runs/{run_id}/logs/evaluate.log`，固定记录 DEBUG 及以上完整过程。
+- 日志格式至少包含 timestamp、level、module、run_id、candidate_id、stage、message。
+- 重复调用配置函数不能重复添加 handler，避免同一条日志打印多次。
+- 单个 candidate 的异常要记录 stack trace，但不能阻断 batch。
+
+审阅提示：
+
+```text
+--verbose
+  -> 让人看到更多过程
+  -> 不改变 evaluate 的结果
+  -> 不改变 evaluate.log 的完整程度
+```
+
+测试：
+
+```bash
+uv run pytest tests/test_logging_config.py -v
+```
+
+### Task 11：Evaluate Orchestration
 
 目标：串起完整评价流程并写出 artifacts。
 
@@ -1071,21 +1211,24 @@ uv run pytest tests/test_gate_registry.py -v
 
 ```text
 factor_autoresearch/
-└── evaluate.py
+├── evaluate.py
+└── logging_config.py
 
 runs/
 └── {run_id}/
 
 tests/
-└── test_evaluate.py
+├── test_evaluate.py
+└── test_logging_config.py
 ```
 
 实现要点：
 
 - 创建 run 目录。
+- 初始化 run 级 file logger。
 - 写 run manifest。
 - 对每个 candidate 执行 parse、evaluate expression、preprocess、metrics、gate。
-- 单候选失败时记录 error，不中断整批。
+- 单候选失败时记录 error 和 stack trace，不中断整批。
 - 写 `summary.md`、`candidate_results.jsonl`、`metrics.parquet`、`ic_series.parquet`、`evaluate.log`。
 - candidate_pass 追加 registry。
 
@@ -1104,7 +1247,7 @@ candidate invalid/error
 uv run pytest tests/test_evaluate.py -v
 ```
 
-### Task 11：CLI
+### Task 12：CLI
 
 目标：给人和 Codex 一个稳定命令入口。
 
@@ -1122,15 +1265,19 @@ tests/
 
 ```bash
 uv run fm dataset prepare-fixed --config configs/csi500_ohlcv_sandbox_v1.toml --output datasets/sandbox_v1
-uv run fm factor validate --dataset datasets/sandbox_v1 --candidates candidate_factors/candidates.jsonl
-uv run fm factor evaluate --dataset datasets/sandbox_v1 --candidates candidate_factors/candidates.jsonl --run-id smoke_001
+uv run fm factor validate --dataset datasets/sandbox_v1 --candidates candidate_factors/candidates.jsonl --verbose
+uv run fm factor evaluate --dataset datasets/sandbox_v1 --candidates candidate_factors/candidates.jsonl --run-id smoke_001 --verbose
+uv run fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1
+uv run fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1 --yes
 ```
 
 审阅提示：
 
 - `validate` 只做静态校验。
 - `evaluate` 才计算 factor values 和 metrics。
-- CLI 输出要短，但要告诉用户 summary 写到哪里。
+- CLI 默认输出要短，但要告诉用户 summary 和 evaluate log 写到哪里。
+- `--verbose` 展示持续过程；适合人工盯运行，也适合 Codex 排查失败。
+- `experiment clean` 未传 `--yes` 时只展示 dry-run 清单，避免误删。
 
 测试：
 
@@ -1138,7 +1285,46 @@ uv run fm factor evaluate --dataset datasets/sandbox_v1 --candidates candidate_f
 uv run pytest tests/test_cli.py -v
 ```
 
-### Task 12：Runbook 和 Smoke Test
+### Task 13：实验输出清理
+
+目标：支持测试后清空 run artifacts 和 registry 结果，从干净状态重新开始。
+
+涉及文件：
+
+```text
+factor_autoresearch/
+├── cleanup.py
+└── cli.py
+
+tests/
+└── test_cleanup.py
+```
+
+实现要点：
+
+- `fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1` 默认 dry-run。
+- `fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1 --yes` 才执行清理。
+- 清理 `runs/` 中属于该 experiment 的 run 目录。
+- 清空或过滤 `candidate_factors/registry.jsonl` 中属于该 experiment 的记录。
+- 保留 `candidate_factors/candidates.jsonl`、`datasets/`、`configs/`、`codex/research_notes.md`、`codex/memory.md`。
+- 输出清理摘要：删除 run 数、移除 registry 行数、保留的输入文件。
+
+审阅提示：
+
+```text
+clean outputs
+  -> 删除 evaluate 产生的输出
+  -> 清空 registry 结果
+  -> 不删除候选输入、固定数据集、配置和研究笔记
+```
+
+测试：
+
+```bash
+uv run pytest tests/test_cleanup.py -v
+```
+
+### Task 14：Runbook 和 Smoke Test
 
 目标：提供第一轮 sandbox 实验怎么跑的说明，以及一个最小可跑 fixture。
 
@@ -1161,11 +1347,13 @@ runbook 内容：
 1. 阅读 sandbox spec。
 2. 阅读 `codex/memory.md` 和 `codex/research_notes.md`。
 3. 追加 30 个 JSONL candidates。
-4. 运行 `uv run fm factor validate`。
-5. 运行 `uv run fm factor evaluate`。
+4. 运行 `uv run fm factor validate --verbose`。
+5. 运行 `uv run fm factor evaluate --verbose`。
 6. 阅读 runs/{run_id}/summary.md。
-7. 更新 `codex/research_notes.md`。
-8. 只有多轮稳定 insight 才更新 `codex/memory.md`。
+7. 出错时先阅读 runs/{run_id}/logs/evaluate.log。
+8. 测试或试跑结束后，如需从零开始，运行 `uv run fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1 --yes`。
+9. 更新 `codex/research_notes.md`。
+10. 只有多轮稳定 insight 才更新 `codex/memory.md`。
 ```
 
 测试：
@@ -1174,7 +1362,7 @@ runbook 内容：
 uv run pytest tests/test_smoke_run.py -v
 ```
 
-### Task 13：最终验证
+### Task 15：最终验证
 
 目标：确认整条链路能工作。
 
@@ -1184,8 +1372,9 @@ uv run pytest tests/test_smoke_run.py -v
 uv run pytest -v
 uv run ruff check .
 uv run fm --help
-uv run fm factor validate --dataset datasets/sandbox_v1 --candidates candidate_factors/candidates.jsonl
-uv run fm factor evaluate --dataset datasets/sandbox_v1 --candidates candidate_factors/candidates.jsonl --run-id smoke_001
+uv run fm factor validate --dataset datasets/sandbox_v1 --candidates candidate_factors/candidates.jsonl --verbose
+uv run fm factor evaluate --dataset datasets/sandbox_v1 --candidates candidate_factors/candidates.jsonl --run-id smoke_001 --verbose
+uv run fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1
 ```
 
 验收：
@@ -1193,10 +1382,13 @@ uv run fm factor evaluate --dataset datasets/sandbox_v1 --candidates candidate_f
 - 全部测试通过。
 - lint 通过。
 - CLI help 正常。
+- `--verbose` 能输出过程日志，且不改变评价结果。
 - validate 对 seed batch 返回 0 invalid。
 - evaluate 写出 `runs/smoke_001/summary.md`。
+- evaluate 写出 `runs/smoke_001/logs/evaluate.log`。
 - 每个 candidate 都有最终状态。
 - 通过 gate 的 candidate 才进入 registry。
+- clean dry-run 能列出将清理的 run artifacts 和 registry 行数，但不修改文件。
 
 ## 10. 第一轮候选和实验运行限制
 
@@ -1291,6 +1483,31 @@ tests/**
 - 不重写历史 registry。
 - 不写 failed / invalid / error。
 
+### 11.6 Logging 口径膨胀
+
+风险：如果每个模块自己配置 logger，CLI 会出现重复日志、格式不一致、verbose 行为不一致，甚至让日志反过来影响评价结果。
+
+取舍：v1 只允许 `logging_config.py` 统一配置 handler 和 level。业务模块只拿 `logging.getLogger(__name__)` 记录事件，不自己添加 handler。
+
+验收重点：
+
+- 默认 CLI 输出短，`--verbose` 输出过程细节。
+- `evaluate.log` 始终完整记录 DEBUG 及以上运行过程。
+- 重复调用 CLI 或测试中的 logging 配置，不应让同一条日志重复输出。
+- logging 不能改变任何 metrics、gate 或 registry 结果。
+
+### 11.7 清理命令误删输入
+
+风险：为了测试方便加入 clean/reset 后，如果边界不清，可能误删 candidates、dataset、config 或研究笔记，导致实验不可复现。
+
+取舍：v1 只提供 outputs clean，不提供全仓库 reset。默认 dry-run，执行必须显式传 `--yes`。
+
+验收重点：
+
+- 清理只影响 `runs/` 和 `candidate_factors/registry.jsonl`。
+- `candidate_factors/candidates.jsonl`、`datasets/`、`configs/`、`codex/research_notes.md`、`codex/memory.md` 保持不变。
+- 清理前后可以重新运行同一个 smoke evaluate。
+
 ## 12. 验收标准
 
 工程验收通过条件：
@@ -1305,9 +1522,15 @@ tests/**
 8. 每个候选在 run result 中得到 `candidate_pass`、`candidate_fail`、`invalid` 或 `error`。
 9. 每个失败或无效候选都有 `failure_bucket` 和 `details`。
 10. 每次 evaluate 都写出 `runs/{run_id}/summary.md`。
-11. 通过 gate 的候选追加到 `candidate_factors/registry.jsonl`。
-12. 未通过 gate、无效、运行错误的候选不写 registry。
-13. 同一个 dataset、candidate JSONL、config 和 tool version 重复运行，应产生相同 summary 和 registry-eligible 结果。
+11. 每次 evaluate 都写出 `runs/{run_id}/logs/evaluate.log`。
+12. CLI 支持 `--verbose`，能展示持续过程日志。
+13. `--verbose` 和默认模式的 metrics、gate、registry 结果一致。
+14. 通过 gate 的候选追加到 `candidate_factors/registry.jsonl`。
+15. 未通过 gate、无效、运行错误的候选不写 registry。
+16. `fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1` 默认 dry-run，不修改文件。
+17. `fm experiment clean --experiment-id csi500_ohlcv_sandbox_v1 --yes` 可以清空 run artifacts 和该 experiment 的 registry 结果。
+18. 清理命令不能删除 candidates、dataset、configs、research notes 或 memory。
+19. 同一个 dataset、candidate JSONL、config 和 tool version 重复运行，应产生相同 summary 和 registry-eligible 结果。
 
 ## 13. 后续不在 v1 做的事情
 
@@ -1323,3 +1546,106 @@ v1 不做：
 - LLM API 内嵌调用。
 
 这些可以在 sandbox v1 跑稳定以后，进入 v1.5 或 v2。
+
+## 14. 当前实现回填（2026-06-22）
+
+本节用于回填本实施计划在当前仓库中的实际落地状态，帮助后续维护者快速区分“计划要求”和“当前已交付结果”。
+
+### 14.1 当前实现状态
+
+截至 `2026-06-22`，sandbox v1 的核心闭环已经在仓库中落地并跑通：
+
+- 已实现 `fm dataset prepare-fixed`，可从本地 `zer0share` 数据生成 `datasets/sandbox_v1/` 固定数据集。
+- 已实现 `fm factor validate`，可对 `candidate_factors/candidates.jsonl` 做 JSONL、字段、category、方向、DSL、窗口、lookback、complexity 的静态校验。
+- 已实现 `fm factor evaluate`，可读取固定 dataset、执行候选表达式、做预处理、计算 metrics、执行 gate，并写出 run artifacts。
+- 已实现 `candidate_factors/registry.jsonl` append-only 写入逻辑，只记录 `candidate_pass`。
+- 已实现统一日志配置，控制台支持 `--verbose`，并持续写出 `runs/{run_id}/logs/evaluate.log`。
+- 已实现 `fm experiment clean`，默认 dry-run，传 `--yes` 后清理当前 experiment 的 run 输出和 registry 结果。
+- 已补齐 pytest 测试与 smoke test，并已通过 `ruff check .`。
+
+当前主要实现文件包括：
+
+- `factor_autoresearch/config.py`
+- `factor_autoresearch/candidates.py`
+- `factor_autoresearch/calculator.py`
+- `factor_autoresearch/data_loader.py`
+- `factor_autoresearch/prepare.py`
+- `factor_autoresearch/preprocess.py`
+- `factor_autoresearch/metrics.py`
+- `factor_autoresearch/gate.py`
+- `factor_autoresearch/registry.py`
+- `factor_autoresearch/logging_config.py`
+- `factor_autoresearch/cleanup.py`
+- `factor_autoresearch/evaluate.py`
+- `factor_autoresearch/cli.py`
+
+### 14.2 当前数据准备状态
+
+`zer0share` 当前本地数据状态已满足本轮 sandbox v1 的固定 dataset 生成要求：
+
+- 已同步：`basic`、`trade_cal`、`daily_kline`、`adj_factor`、`daily_basic`、`stock_st`、`suspend_d`、`stk_limit`、`index_weight`
+- 已构建股票池：`univ_trade_zz500` 等 universe 分区
+- 已有行业映射：`sw_member`
+- 当前固定 dataset 已生成：`datasets/sandbox_v1/`
+
+### 14.3 当前实现偏差
+
+当前实现存在一项已知、且是有意接受的偏差：
+
+- 原实验规格和数据准备设想中，行业暴露优先希望使用 `ci_member`。
+- 实际执行时，当前 Tushare token 不具备 `ci_index_member` 接口权限，无法完成 `zer0share` 的 `ci_member` 同步。
+- 因此当前 `prepare-fixed` 实现改为使用本地已同步的 `sw_member` 一级行业映射作为 `industry` 暴露来源。
+- 这一偏差不影响 sandbox v1 的“固定 dataset -> validate -> evaluate -> registry -> notes”闭环，但会影响行业暴露口径。
+
+当前配置中的落地口径为：
+
+```toml
+industry_source = "sw_l1_name"
+```
+
+如果未来 token 权限补齐，可以将行业源切回 CI 口径，并重新生成固定 dataset。
+
+### 14.4 第一轮实际运行结果
+
+当前仓库已经完成第一轮真实候选挖掘，运行信息如下：
+
+- run id：`batch_001`
+- summary：`runs/batch_001/summary.md`
+- log：`runs/batch_001/logs/evaluate.log`
+- registry 输出：`candidate_factors/registry.jsonl`
+
+本轮 batch 的结果为：
+
+- 候选数：30
+- `candidate_pass`：8
+- `candidate_fail`：22
+- `invalid`：0
+- `error`：0
+
+本轮通过 gate 的候选包括：
+
+- `fa_0005_daily_range`
+- `fa_0010_volume_volatility`
+- `fa_0019_reversal_3d`
+- `fa_0020_reversal_5d`
+- `fa_0021_daily_vol_5d`
+- `fa_0022_daily_vol_10d`
+- `fa_0023_range_vol_5d`
+- `fa_0024_range_mean_5d`
+
+从当前结果看，第一轮更强的方向集中在：
+
+- 负向 `volatility`
+- 负向 `reversal`
+
+### 14.5 当前验收结论
+
+按照本计划第 12 节验收标准，当前状态可以判定为：
+
+- 工程闭环已完成
+- 固定 dataset 已生成
+- validate / evaluate / registry / summary / evaluate.log 均已真实产出
+- 测试与 lint 已通过
+- 首轮 30 候选真实挖掘已完成
+
+因此，sandbox v1 当前可以视为“已完成首次可运行实现，并已完成第一轮真实因子挖掘”。
