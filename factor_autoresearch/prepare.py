@@ -236,7 +236,7 @@ def prepare_fixed_dataset(
     manifest = {
         "dataset_id": config.dataset_id,
         "experiment_id": config.experiment_id,
-        "created_at": pd.Timestamp.utcnow().strftime("%Y-%m-%d"),
+        "created_at": pd.Timestamp.now("UTC").strftime("%Y-%m-%d"),
         "source": config.source,
         "source_path": str(config.source_path),
         "universe": config.universe,

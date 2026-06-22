@@ -23,12 +23,12 @@ def test_prepare_fixed_dataset_from_fake_zer0share(tmp_path) -> None:
     ).to_parquet(trade_cal_dir / "data.parquet", index=False)
 
     for trade_date in ["20240102", "20240103", "20240104"]:
-        universe_dir = data_dir / "stock" / "universe" / "name=univ_trade_zz500" / f"date={trade_date}"
+        universe_dir = data_dir / "stock" / "universe" / "name=fixture" / f"date={trade_date}"
         universe_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(
             {
                 "trade_date": [trade_date, trade_date],
-                "universe": ["univ_trade_zz500", "univ_trade_zz500"],
+                    "universe": ["fixture", "fixture"],
                 "ts_code": ["000001.SZ", "000002.SZ"],
             }
         ).to_parquet(universe_dir / "data.parquet", index=False)
