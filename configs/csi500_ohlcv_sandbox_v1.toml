@@ -1,0 +1,48 @@
+experiment_id = "csi500_ohlcv_sandbox_v1"
+dataset_id = "sandbox_v1"
+universe = "csi500"
+date_start = "2024-01-01"
+date_end = "2025-12-31"
+adjustment = "hfq"
+forward_return_definition = "next_open_to_open_v1"
+allowed_fields = ["open_hfq", "high_hfq", "low_hfq", "close_hfq", "volume"]
+allowed_functions = [
+    "abs",
+    "log",
+    "delay",
+    "ts_mean",
+    "ts_std",
+    "ts_delta",
+    "ts_return",
+    "ts_rank",
+    "cs_rank",
+    "cs_zscore",
+]
+allowed_windows = [1, 3, 5, 10, 20]
+categories = ["momentum", "reversal", "volatility", "liquidity", "volume", "intraday", "gap"]
+horizons = ["1d", "5d", "20d"]
+features = ["open_hfq", "high_hfq", "low_hfq", "close_hfq", "volume"]
+preprocess_exposures = ["industry", "market_cap"]
+source = "zer0share"
+source_path = "C:/Users/hp/Documents/zer0share"
+source_universe_key = "univ_trade_zz500"
+industry_source = "ci_l1_name"
+base_filters_inherited = [
+    "csi_membership",
+    "st",
+    "delisting",
+    "suspension",
+    "low_liquidity",
+    "low_volume",
+    "limit_up",
+    "limit_down",
+]
+gate_config = "configs/candidate_gate_v1.toml"
+
+[prepare]
+price_start_buffer_days = 30
+use_incremental_universe = true
+
+[preprocess]
+winsorize_mad_scale = 5.0
+size_exposure = "log_market_cap"

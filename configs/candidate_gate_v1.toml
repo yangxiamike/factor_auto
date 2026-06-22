@@ -1,0 +1,20 @@
+[gate]
+version = "candidate_gate_v1"
+coverage_mean_min = 0.70
+effective_trade_days_min = 60
+complexity_score_max = 12
+best_horizon_score_min = 1.0
+min_cross_section_size = 100
+quantiles = 5
+
+[gate.weights]
+ic = 0.30
+rankic = 0.40
+monotonicity = 0.30
+
+[gate.components]
+ic_scale = 0.01
+rankic_scale = 0.01
+monotonicity_min = 0.0
+monotonicity_max = 1.0
+component_max = 2.0
