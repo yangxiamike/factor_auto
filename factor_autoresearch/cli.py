@@ -8,6 +8,7 @@ import typer
 
 from factor_autoresearch.cleanup import clean_experiment_outputs
 from factor_autoresearch.config import load_experiment_config
+from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.evaluate import Evaluator, run_static_validation
 from factor_autoresearch.prepare import prepare_fixed_dataset
 
@@ -84,7 +85,7 @@ def factor_evaluate(
     quiet: Annotated[bool, typer.Option("--quiet")] = False,
 ) -> None:
     experiment_config = load_experiment_config(config)
-    evaluator = Evaluator(
+    context = EvaluationContext(
         config=experiment_config,
         dataset_path=dataset,
         candidates_path=candidates,
@@ -94,6 +95,7 @@ def factor_evaluate(
         verbose=verbose,
         quiet=quiet,
     )
+    evaluator = Evaluator(context)
     artifacts = evaluator.evaluate_batch()
     typer.echo(
         json.dumps(

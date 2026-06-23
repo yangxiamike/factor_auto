@@ -1,5 +1,6 @@
 import json
 
+from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.evaluate import Evaluator
 
 
@@ -23,7 +24,7 @@ def test_evaluator_writes_artifacts(sample_dataset_dir, tmp_path, test_config) -
         + "\n",
         encoding="utf-8",
     )
-    evaluator = Evaluator(
+    context = EvaluationContext(
         config=test_config,
         dataset_path=sample_dataset_dir,
         candidates_path=candidates_path,
@@ -32,6 +33,7 @@ def test_evaluator_writes_artifacts(sample_dataset_dir, tmp_path, test_config) -
         run_id="smoke_001",
         verbose=False,
     )
+    evaluator = Evaluator(context)
     artifacts = evaluator.evaluate_batch()
     assert (artifacts.run_dir / "summary.md").exists()
     assert (artifacts.run_dir / "logs" / "evaluate.log").exists()

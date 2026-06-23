@@ -6,28 +6,27 @@ from factor_autoresearch.preprocess import preprocess_factor
 
 
 def test_preprocess_and_metrics(sample_dataset_dir, test_config) -> None:
-    dataset = DataLoader().load(sample_dataset_dir, test_config)
+    dataset = DataLoader(config=test_config, dataset_path=sample_dataset_dir).load()
     candidate = Candidate(
-        candidate_id="fa_metric",
-        name="metric",
+        candidate_id="fa_pipeline",
+        name="pipeline",
         expression="cs_rank((close_hfq - open_hfq) / open_hfq)",
         expected_direction="positive",
-        hypothesis="metric",
+        hypothesis="pipeline",
         category="intraday",
         lookback_days=1,
         created_at="2026-06-22",
-        notes="metric",
+        notes="pipeline",
     )
-    calc = FactorCalc()
-    raw = calc.calculate(candidate, dataset, test_config)
+    calc = FactorCalc(test_config)
+    raw = calc.calculate(candidate, dataset)
     processed = preprocess_factor(raw, dataset, test_config)
     metrics = compute_candidate_metrics(
         candidate_id=candidate.candidate_id,
         factor=processed,
         dataset=dataset,
         config=test_config,
-        complexity_score=calc.complexity_score(candidate, test_config),
+        complexity_score=calc.complexity_score(candidate),
     )
-    assert processed.notna().sum() > 0
+    assert metrics.aggregate["coverage_mean"] > 0
     assert not metrics.horizon_rows.empty
-    assert metrics.aggregate["effective_trade_days"] >= 3

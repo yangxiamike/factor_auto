@@ -32,17 +32,20 @@ class DatasetBundle:
 
 
 class DataLoader:
-    def load(self, dataset_path: Path, config: ExperimentConfig) -> DatasetBundle:
-        dataset_path = dataset_path.resolve()
-        manifest_path = dataset_path / "manifest.json"
-        panel_path = dataset_path / "panel.parquet"
-        forward_path = dataset_path / "forward_returns.parquet"
+    def __init__(self, *, config: ExperimentConfig, dataset_path: Path) -> None:
+        self.config = config
+        self.dataset_path = Path(dataset_path).resolve()
+
+    def load(self) -> DatasetBundle:
+        manifest_path = self.dataset_path / "manifest.json"
+        panel_path = self.dataset_path / "panel.parquet"
+        forward_path = self.dataset_path / "forward_returns.parquet"
 
         with manifest_path.open("r", encoding="utf-8") as handle:
             manifest = json.load(handle)
-        if manifest["dataset_id"] != config.dataset_id:
+        if manifest["dataset_id"] != self.config.dataset_id:
             raise ValueError("dataset_id mismatch between manifest and config")
-        if manifest["experiment_id"] != config.experiment_id:
+        if manifest["experiment_id"] != self.config.experiment_id:
             raise ValueError("experiment_id mismatch between manifest and config")
 
         panel = pd.read_parquet(panel_path)

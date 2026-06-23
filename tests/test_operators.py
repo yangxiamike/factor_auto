@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from factor_autoresearch.data_loader import DataLoader
-from factor_autoresearch.operators import OPERATOR_REGISTRY, safe_divide
+from factor_autoresearch.operators import OPERATOR_REGISTRY, div0
 
 
 def _load_panel(sample_dataset_dir, test_config) -> pd.DataFrame:
@@ -32,7 +32,7 @@ def test_add_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     left = panel["close_hfq"]
     right = panel["open_hfq"]
-    result = OPERATOR_REGISTRY["add"].func(left, right, panel=panel)
+    result = OPERATOR_REGISTRY["add"].func(left, right)
     expected = left + right
     pd.testing.assert_series_equal(result, expected)
 
@@ -41,7 +41,7 @@ def test_sub_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     left = panel["close_hfq"]
     right = panel["open_hfq"]
-    result = OPERATOR_REGISTRY["sub"].func(left, right, panel=panel)
+    result = OPERATOR_REGISTRY["sub"].func(left, right)
     expected = left - right
     pd.testing.assert_series_equal(result, expected)
 
@@ -49,25 +49,25 @@ def test_sub_operator(sample_dataset_dir, test_config) -> None:
 def test_mul_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     left = panel["close_hfq"]
-    result = OPERATOR_REGISTRY["mul"].func(left, 2.0, panel=panel)
+    result = OPERATOR_REGISTRY["mul"].func(left, 2.0)
     expected = left * 2.0
     pd.testing.assert_series_equal(result, expected)
 
 
-def test_div_operator_uses_safe_divide(sample_dataset_dir, test_config) -> None:
+def test_div_operator_uses_div0(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     left = panel["close_hfq"]
     right = panel["open_hfq"].copy()
     right.iloc[0] = 0.0
-    result = OPERATOR_REGISTRY["div"].func(left, right, panel=panel)
-    expected = safe_divide(left, right)
+    result = OPERATOR_REGISTRY["div"].func(left, right)
+    expected = div0(left, right)
     pd.testing.assert_series_equal(result, expected)
 
 
 def test_abs_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     series = panel["close_hfq"] - panel["open_hfq"]
-    result = OPERATOR_REGISTRY["abs"].func(series, panel=panel)
+    result = OPERATOR_REGISTRY["abs"].func(series)
     expected = series.abs()
     pd.testing.assert_series_equal(result, expected)
 
@@ -91,7 +91,7 @@ def test_log_operator_masks_non_positive_values() -> None:
 def test_delay_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     series = panel["close_hfq"]
-    result = OPERATOR_REGISTRY["delay"].func(series, window=1)
+    result = OPERATOR_REGISTRY["delay"].func(series, 1)
     expected = series.groupby(level="ts_code", sort=False).shift(1)
     pd.testing.assert_series_equal(result, expected)
 
@@ -99,7 +99,7 @@ def test_delay_operator(sample_dataset_dir, test_config) -> None:
 def test_ts_mean_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     series = panel["close_hfq"]
-    result = OPERATOR_REGISTRY["ts_mean"].func(series, window=3)
+    result = OPERATOR_REGISTRY["ts_mean"].func(series, 3)
     expected = series.groupby(level="ts_code", sort=False).transform(
         lambda values: values.rolling(3, min_periods=3).mean()
     )
@@ -109,7 +109,7 @@ def test_ts_mean_operator(sample_dataset_dir, test_config) -> None:
 def test_ts_std_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     series = panel["close_hfq"]
-    result = OPERATOR_REGISTRY["ts_std"].func(series, window=3)
+    result = OPERATOR_REGISTRY["ts_std"].func(series, 3)
     expected = series.groupby(level="ts_code", sort=False).transform(
         lambda values: values.rolling(3, min_periods=3).std(ddof=0)
     )
@@ -119,27 +119,27 @@ def test_ts_std_operator(sample_dataset_dir, test_config) -> None:
 def test_ts_delta_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     series = panel["close_hfq"]
-    result = OPERATOR_REGISTRY["ts_delta"].func(series, window=1)
+    result = OPERATOR_REGISTRY["ts_delta"].func(series, 1)
     expected = series - series.groupby(level="ts_code", sort=False).shift(1)
     pd.testing.assert_series_equal(result, expected)
 
 
-def test_ts_return_operator_uses_safe_divide(sample_dataset_dir, test_config) -> None:
+def test_ts_return_operator_uses_div0(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     series = panel["close_hfq"].copy()
     first_code = series.index.get_level_values("ts_code")[0]
     stock_slice = series.loc[(slice(None), first_code)].copy()
     stock_slice.iloc[0] = 0.0
     series.loc[(slice(None), first_code)] = stock_slice.to_numpy()
-    result = OPERATOR_REGISTRY["ts_return"].func(series, window=1)
-    expected = safe_divide(series, series.groupby(level="ts_code", sort=False).shift(1)) - 1.0
+    result = OPERATOR_REGISTRY["ts_return"].func(series, 1)
+    expected = div0(series, series.groupby(level="ts_code", sort=False).shift(1)) - 1.0
     pd.testing.assert_series_equal(result, expected)
 
 
 def test_ts_rank_operator(sample_dataset_dir, test_config) -> None:
     panel = _load_panel(sample_dataset_dir, test_config)
     series = panel["close_hfq"]
-    result = OPERATOR_REGISTRY["ts_rank"].func(series, window=3)
+    result = OPERATOR_REGISTRY["ts_rank"].func(series, 3)
     expected = series.groupby(level="ts_code", sort=False).transform(
         lambda values: values.rolling(3, min_periods=3).apply(
             lambda bucket: pd.Series(bucket).rank(pct=True).iloc[-1],
@@ -155,7 +155,7 @@ def test_cs_rank_operator_respects_universe_mask(sample_dataset_dir, test_config
     first_row = panel.index[0]
     panel.loc[first_row, "in_universe"] = False
     series = panel["close_hfq"] - panel["open_hfq"]
-    result = OPERATOR_REGISTRY["cs_rank"].func(series, panel=panel)
+    result = OPERATOR_REGISTRY["cs_rank"].func(series, panel)
 
     expected = pd.Series(np.nan, index=series.index, dtype=float)
     mask = panel["in_universe"].fillna(False)
@@ -171,7 +171,7 @@ def test_cs_zscore_operator_respects_universe_mask(sample_dataset_dir, test_conf
     first_row = panel.index[0]
     panel.loc[first_row, "in_universe"] = False
     series = panel["close_hfq"]
-    result = OPERATOR_REGISTRY["cs_zscore"].func(series, panel=panel)
+    result = OPERATOR_REGISTRY["cs_zscore"].func(series, panel)
 
     def _zscore(values: pd.Series) -> pd.Series:
         std = values.std(ddof=0)

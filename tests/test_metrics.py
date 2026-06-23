@@ -6,7 +6,7 @@ from factor_autoresearch.preprocess import preprocess_factor
 
 
 def test_compute_candidate_metrics_returns_horizon_rows(sample_dataset_dir, test_config) -> None:
-    dataset = DataLoader().load(sample_dataset_dir, test_config)
+    dataset = DataLoader(config=test_config, dataset_path=sample_dataset_dir).load()
     candidate = Candidate(
         candidate_id="fa_metric",
         name="metric",
@@ -18,15 +18,15 @@ def test_compute_candidate_metrics_returns_horizon_rows(sample_dataset_dir, test
         created_at="2026-06-22",
         notes="metric",
     )
-    calc = FactorCalc()
-    raw = calc.calculate(candidate, dataset, test_config)
+    calc = FactorCalc(test_config)
+    raw = calc.calculate(candidate, dataset)
     processed = preprocess_factor(raw, dataset, test_config)
-    metrics = compute_candidate_metrics(
+    result = compute_candidate_metrics(
         candidate_id=candidate.candidate_id,
         factor=processed,
         dataset=dataset,
         config=test_config,
-        complexity_score=calc.complexity_score(candidate, test_config),
+        complexity_score=calc.complexity_score(candidate),
     )
-    assert not metrics.horizon_rows.empty
-    assert metrics.aggregate["effective_trade_days"] >= 3
+    assert set(result.horizon_rows["horizon"]) == {"1d", "5d", "20d"}
+    assert result.aggregate["coverage_mean"] > 0

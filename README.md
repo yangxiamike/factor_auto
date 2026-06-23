@@ -63,6 +63,7 @@ factor_autoresearch/
   *.py                            # 确定性 Python 工具层
 
 docs/
+  architecture/                   # 代码结构总览
   framework/                      # 长期框架合同
   experiments/                    # sandbox 实验规格
   plans/                          # 实施计划和任务拆分
@@ -228,10 +229,11 @@ uv run pytest tests/test_smoke_run.py -v
 建议按这个顺序读：
 
 1. `README.md`：项目入口和常用操作。
-2. `docs/framework/factor-autoresearch-framework-v1.md`：长期框架合同。
-3. `docs/experiments/factor-autoresearch-sandbox-v1.md`：第一轮中证500 sandbox 规则。
-4. `docs/experiments/csi500-ohlcv-sandbox-v1-runbook.md`：每轮实验操作步骤。
-5. `docs/plans/factor-autoresearch-sandbox-v1-implementation-plan.md`：实现任务、测试和验收拆分。
+2. `docs/architecture/factor-autoresearch-code-structure.md`：当前代码结构和模块边界。
+3. `docs/framework/factor-autoresearch-framework-v1.md`：长期框架合同。
+4. `docs/experiments/factor-autoresearch-sandbox-v1.md`：第一轮中证500 sandbox 规则。
+5. `docs/experiments/csi500-ohlcv-sandbox-v1-runbook.md`：每轮实验操作步骤。
+6. `docs/plans/factor-autoresearch-sandbox-v1-implementation-plan.md`：实现任务、测试和验收拆分。
 
 ## 10. 当前定位
 
