@@ -1,3 +1,5 @@
+"""负责清理指定实验的 run 目录和 registry 记录。"""
+
 from __future__ import annotations
 
 import json
@@ -6,13 +8,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# ============== 清理结果 ==============
+
 @dataclass(frozen=True)
 class CleanupReport:
+    """描述一次清理操作命中的 run 和 registry 记录。"""
+
     experiment_id: str
     run_ids: list[str]
     registry_removed: int
     dry_run: bool
 
+
+# ============== 清理入口 ==============
 
 def clean_experiment_outputs(
     *,
@@ -21,6 +29,7 @@ def clean_experiment_outputs(
     registry_path: Path,
     yes: bool,
 ) -> CleanupReport:
+    """按实验 ID 清理 runs 目录和 registry，支持 dry-run。"""
     runs_dir = runs_dir.resolve()
     registry_path = registry_path.resolve()
     run_targets: list[Path] = []

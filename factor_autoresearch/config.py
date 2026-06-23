@@ -1,3 +1,5 @@
+"""负责读取实验与 gate 配置，并构造稳定的实验配置对象。"""
+
 from __future__ import annotations
 
 import json
@@ -8,13 +10,20 @@ from pathlib import Path
 from typing import Any
 
 
+# ============== 配置哈希 ==============
+
 def _hash_payload(payload: dict[str, Any]) -> str:
+    """为配置载荷生成稳定的 sha256 哈希。"""
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
     return f"sha256:{sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
+# ============== 配置结构 ==============
+
 @dataclass(frozen=True)
 class GateConfig:
+    """保存 gate 阶段使用的阈值与权重配置。"""
+
     version: str
     coverage_mean_min: float
     effective_trade_days_min: int
@@ -26,23 +35,30 @@ class GateConfig:
     components: dict[str, float]
 
     def as_dict(self) -> dict[str, Any]:
+        """转成普通字典，便于序列化和哈希。"""
         return asdict(self)
 
 
 @dataclass(frozen=True)
 class PrepareConfig:
+    """保存 prepare 阶段的预处理参数。"""
+
     price_start_buffer_days: int
     use_incremental_universe: bool
 
 
 @dataclass(frozen=True)
 class PreprocessConfig:
+    """保存因子预处理阶段的参数。"""
+
     winsorize_mad_scale: float
     size_exposure: str
 
 
 @dataclass(frozen=True)
 class ExperimentConfig:
+    """聚合一次实验运行所需的完整配置。"""
+
     experiment_id: str
     dataset_id: str
     universe: str
@@ -69,6 +85,7 @@ class ExperimentConfig:
     config_hash: str
 
     def as_dict(self) -> dict[str, Any]:
+        """输出适合落盘的配置字典表示。"""
         payload = asdict(self)
         payload["source_path"] = str(self.source_path)
         payload["gate_config_path"] = str(self.gate_config_path)
@@ -76,12 +93,16 @@ class ExperimentConfig:
         return payload
 
 
+# ============== 配置读取 ==============
+
 def _load_toml(path: Path) -> dict[str, Any]:
+    """读取 TOML 文件并返回原始字典。"""
     with path.open("rb") as handle:
         return tomllib.load(handle)
 
 
 def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
+    """从实验配置文件加载 ExperimentConfig。"""
     experiment_path = Path(config_path).resolve()
     raw = _load_toml(experiment_path)
     gate_path = (experiment_path.parent.parent / raw["gate_config"]).resolve()

@@ -1,3 +1,5 @@
+"""负责统一配置控制台与文件日志输出。"""
+
 from __future__ import annotations
 
 import logging
@@ -7,12 +9,15 @@ from pathlib import Path
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s run=%(run_id)s candidate=%(candidate_id)s stage=%(stage)s %(message)s"
 
 
+# ============== 日志配置 ==============
+
 def configure_logging(
     *,
     run_dir: Path | None,
     verbose: bool,
     quiet: bool = False,
 ) -> None:
+    """根据运行目录和输出级别配置根日志器。"""
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
     root.handlers.clear()

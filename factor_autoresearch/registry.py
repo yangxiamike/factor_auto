@@ -1,4 +1,4 @@
-"""Candidate registry append-only writer."""
+"""负责以 append-only 方式写入候选因子注册表。"""
 
 from __future__ import annotations
 
@@ -12,10 +12,13 @@ from factor_autoresearch.gate import GateDecision
 from factor_autoresearch.metrics import MetricsResult
 
 
+# ============== 注册表写入 ==============
+
 class RegistryWriter:
-    """Append passed candidates to a JSONL registry."""
+    """把通过 gate 的候选因子追加写入 JSONL 注册表。"""
 
     def __init__(self, path: str | Path) -> None:
+        """记录注册表文件路径。"""
         self.path = Path(path)
 
     def append_passed(
@@ -27,6 +30,7 @@ class RegistryWriter:
         context: EvaluationContext,
         factor_values_path: str | Path,
     ) -> bool:
+        """追加写入通过 gate 的候选因子，重复键则跳过。"""
         if not decision.passed:
             return False
 
@@ -73,7 +77,10 @@ class RegistryWriter:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         return True
 
+    # ============== 去重读取 ==============
+
     def _existing_keys(self) -> set[tuple[str, str, str]]:
+        """读取已有记录的去重键集合。"""
         if not self.path.exists():
             return set()
         existing: set[tuple[str, str, str]] = set()
