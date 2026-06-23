@@ -1,3 +1,7 @@
+"""
+评估编排模块: 负责串联候选因子加载、静态校验、批量评估与结果落盘流程。
+"""
+
 from __future__ import annotations
 
 import json
@@ -25,17 +29,25 @@ from factor_autoresearch.registry import RegistryWriter
 LOGGER = logging.getLogger(__name__)
 
 
+# ============== 评估结果结构 ==============
 @dataclass(frozen=True)
 class EvaluationArtifacts:
+    """评估产物: 记录本次评估运行目录与候选结果列表。"""
+
     run_dir: Path
     results: list[dict[str, Any]]
 
 
 def _sha256_file(path: Path) -> str:
+    """文件哈希: 计算文件内容的 sha256 标识。"""
+
     return f"sha256:{sha256(path.read_bytes()).hexdigest()}"
 
 
+# ============== 静态校验入口 ==============
 def validate_dataset_contract(dataset_path: str | Path, config: ExperimentConfig) -> None:
+    """数据集契约校验: 确认 dataset manifest 与实验配置一致。"""
+
     manifest_path = Path(dataset_path) / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(f"dataset manifest not found: {manifest_path}")
@@ -53,18 +65,12 @@ def run_static_validation(
     dataset_path: str | Path,
     config: ExperimentConfig,
 ) -> list[dict[str, Any]]:
+    """静态校验: 批量校验候选表达式并返回有效性结果。"""
+
     validate_dataset_contract(dataset_path, config)
     calc = FactorCalc(config)
     candidates, invalid_records = load_candidate_batch(candidates_path, config)
-    results: list[dict[str, Any]] = [
-        {
-            "id": record.candidate_id,
-            "status": "invalid",
-            "failure_bucket": record.failure_bucket,
-            "details": record.details,
-        }
-        for record in invalid_records
-    ]
+    results = _invalid_results_from_records(invalid_records)
     for candidate in candidates:
         try:
             metadata = calc.validate_candidate(candidate)
@@ -92,8 +98,13 @@ def run_static_validation(
     return results
 
 
+# ============== 评估编排器 ==============
 class Evaluator:
+    """评估器: 负责执行单个批次的候选评估与产物写出。"""
+
     def __init__(self, context: EvaluationContext) -> None:
+        """初始化: 准备评估上下文依赖与落盘组件。"""
+
         self.context = context
         self.factor_calc = FactorCalc(context.config)
         self.loader = DataLoader(config=context.config, dataset_path=context.dataset_path)
@@ -101,6 +112,8 @@ class Evaluator:
         self.artifacts = ArtifactWriter(context)
 
     def evaluate_batch(self) -> EvaluationArtifacts:
+        """批量评估: 执行整批候选因子的加载、评估、汇总与写出。"""
+
         dataset = self.loader.load()
         candidates, invalid_records = load_candidate_batch(self.context.candidates_path, self.context.config)
         self.artifacts.prepare_run_dir()
@@ -117,19 +130,9 @@ class Evaluator:
         manifest = self._build_run_manifest(len(candidates) + len(invalid_records), dataset.manifest)
         self.artifacts.write_manifest(manifest)
 
-        results: list[dict[str, Any]] = []
+        results = self._collect_invalid_results(invalid_records)
         metric_frames: list[pd.DataFrame] = []
         ic_frames: list[pd.DataFrame] = []
-
-        for record in invalid_records:
-            results.append(
-                {
-                    "id": record.candidate_id,
-                    "status": "invalid",
-                    "failure_bucket": record.failure_bucket,
-                    "details": record.details,
-                }
-            )
 
         for candidate in candidates:
             LOGGER.info(
@@ -142,15 +145,10 @@ class Evaluator:
             )
             result, metrics_result = self.evaluate_candidate(candidate, dataset)
             results.append(result)
-            if metrics_result is not None:
-                metric_frames.append(metrics_result.horizon_rows)
-                ic_frames.append(metrics_result.ic_series)
+            self._append_metrics_frames(metrics_result, metric_frames, ic_frames)
 
-        metrics_frame = pd.concat(metric_frames, ignore_index=True) if metric_frames else pd.DataFrame()
-        ic_series_frame = pd.concat(ic_frames, ignore_index=True) if ic_frames else pd.DataFrame()
-        self.artifacts.write_results(results, metrics_frame, ic_series_frame)
-        summary_text = self._render_summary(results, metrics_frame, dataset.manifest)
-        self.artifacts.write_summary(summary_text)
+        metrics_frame, ic_series_frame = self._combine_metric_frames(metric_frames, ic_frames)
+        self._write_batch_outputs(results, metrics_frame, ic_series_frame, dataset.manifest)
         LOGGER.info(
             "evaluation batch completed",
             extra={"run_id": self.context.run_id, "stage": "batch"},
@@ -162,6 +160,8 @@ class Evaluator:
         candidate: Candidate,
         dataset: DatasetBundle,
     ) -> tuple[dict[str, Any], MetricsResult | None]:
+        """单因子评估: 返回候选评估结果，并隔离运行时异常。"""
+
         try:
             metadata = self.factor_calc.validate_candidate(candidate)
         except ExpressionValidationError as exc:
@@ -220,6 +220,8 @@ class Evaluator:
             )
 
     def _build_run_manifest(self, candidate_count: int, dataset_manifest: dict[str, Any]) -> dict[str, Any]:
+        """运行清单: 组装本次评估批次的 manifest 内容。"""
+
         return {
             "run_id": self.context.run_id,
             "experiment_id": self.context.config.experiment_id,
@@ -237,6 +239,8 @@ class Evaluator:
         }
 
     def _result_from_decision(self, candidate: Candidate, decision: GateDecision, metrics_result: MetricsResult) -> dict[str, Any]:
+        """评估结果组装: 把门禁决策与指标汇总成标准结果字典。"""
+
         return {
             "id": candidate.candidate_id,
             "status": decision.status,
@@ -248,12 +252,56 @@ class Evaluator:
             "metrics": metrics_result.aggregate,
         }
 
+    def _collect_invalid_results(self, invalid_records: list[Any]) -> list[dict[str, Any]]:
+        """无效记录收集: 把候选加载期的非法记录转成结果字典。"""
+
+        return _invalid_results_from_records(invalid_records)
+
+    def _append_metrics_frames(
+        self,
+        metrics_result: MetricsResult | None,
+        metric_frames: list[pd.DataFrame],
+        ic_frames: list[pd.DataFrame],
+    ) -> None:
+        """指标帧追加: 把单候选指标结果追加到批量聚合容器。"""
+
+        if metrics_result is None:
+            return
+        metric_frames.append(metrics_result.horizon_rows)
+        ic_frames.append(metrics_result.ic_series)
+
+    def _combine_metric_frames(
+        self,
+        metric_frames: list[pd.DataFrame],
+        ic_frames: list[pd.DataFrame],
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """指标帧合并: 合并批量评估过程中累积的指标明细。"""
+
+        metrics_frame = pd.concat(metric_frames, ignore_index=True) if metric_frames else pd.DataFrame()
+        ic_series_frame = pd.concat(ic_frames, ignore_index=True) if ic_frames else pd.DataFrame()
+        return metrics_frame, ic_series_frame
+
+    def _write_batch_outputs(
+        self,
+        results: list[dict[str, Any]],
+        metrics_frame: pd.DataFrame,
+        ic_series_frame: pd.DataFrame,
+        dataset_manifest: dict[str, Any],
+    ) -> None:
+        """批量结果写出: 统一写出结果明细与 summary 文本。"""
+
+        self.artifacts.write_results(results, metrics_frame, ic_series_frame)
+        summary_text = self._render_summary(results, metrics_frame, dataset_manifest)
+        self.artifacts.write_summary(summary_text)
+
     def _render_summary(
         self,
         results: list[dict[str, Any]],
         metrics_frame: pd.DataFrame,
         dataset_manifest: dict[str, Any],
     ) -> str:
+        """摘要渲染: 生成评估批次的 markdown 总结文本。"""
+
         counts = {
             "evaluated": len(results),
             "passed": sum(item["status"] == "candidate_pass" for item in results),
@@ -307,3 +355,18 @@ class Evaluator:
                 )
                 lines.append(top_line.format(**row.fillna(0).to_dict()))
         return "\n".join(lines) + "\n"
+
+
+# ============== 评估辅助函数 ==============
+def _invalid_results_from_records(invalid_records: list[Any]) -> list[dict[str, Any]]:
+    """无效结果转换: 把非法候选记录转换为统一结果结构。"""
+
+    return [
+        {
+            "id": record.candidate_id,
+            "status": "invalid",
+            "failure_bucket": record.failure_bucket,
+            "details": record.details,
+        }
+        for record in invalid_records
+    ]

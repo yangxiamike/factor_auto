@@ -1,3 +1,7 @@
+"""
+固定数据集准备模块: 从 zer0share 风格源数据构造 panel、forward returns 和落盘产物。
+"""
+
 from __future__ import annotations
 
 import json
@@ -11,18 +15,27 @@ import pandas as pd
 from factor_autoresearch.config import ExperimentConfig
 
 
+# ============== 结果结构 ==============
 @dataclass(frozen=True)
 class PreparedDataset:
+    """准备结果: 汇总 panel、forward returns 和 manifest 三类输出。"""
+
     panel: pd.DataFrame
     forward_returns: pd.DataFrame
     manifest: dict[str, object]
 
 
+# ============== 日期辅助函数 ==============
 def _yyyymmdd(date_text: str) -> str:
+    """日期转码: 把 YYYY-MM-DD 转成 DuckDB 查询使用的 YYYYMMDD。"""
+
     return date_text.replace("-", "")
 
 
+# ============== 源数据读取函数 ==============
 def _read_trade_dates(conn: duckdb.DuckDBPyConnection, data_dir: Path, config: ExperimentConfig) -> pd.DataFrame:
+    """读取交易日: 按配置区间加载上交所开市日历。"""
+
     pattern = str(data_dir / "stock" / "trade_cal" / "exchange=*" / "data.parquet")
     sql = """
         select cast(cal_date as varchar) as trade_date
@@ -38,6 +51,8 @@ def _read_trade_dates(conn: duckdb.DuckDBPyConnection, data_dir: Path, config: E
 def _read_universe_members(
     conn: duckdb.DuckDBPyConnection, data_dir: Path, config: ExperimentConfig
 ) -> pd.DataFrame:
+    """读取股票池: 按日期区间加载目标 universe 的成分股。"""
+
     pattern = str(
         data_dir
         / "stock"
@@ -62,6 +77,8 @@ def _read_table_for_codes(
     end_date: str,
     columns: list[str],
 ) -> pd.DataFrame:
+    """读取表数据: 按股票池和日期区间过滤通用行情类 parquet 表。"""
+
     sql = f"""
         select {", ".join(columns)}
         from read_parquet(?, hive_partitioning=true) as src
@@ -74,6 +91,8 @@ def _read_table_for_codes(
 def _read_industry_members(
     conn: duckdb.DuckDBPyConnection, data_dir: Path, industry_source: str
 ) -> pd.DataFrame:
+    """读取行业归属: 加载股票行业成员及其生效区间。"""
+
     if industry_source.startswith("sw_"):
         pattern = str(data_dir / "stock" / "industry" / "sw_member" / "data.parquet")
     else:
@@ -93,6 +112,7 @@ def _read_industry_members(
     return conn.execute(sql, [pattern]).fetchdf()
 
 
+# ============== 数据集构造函数 ==============
 def _build_panel(
     trading_days: pd.DataFrame,
     universe_members: pd.DataFrame,
@@ -101,6 +121,8 @@ def _build_panel(
     adj_factor: pd.DataFrame,
     ci_members: pd.DataFrame,
 ) -> pd.DataFrame:
+    """构造 panel: 拼接交易网格、股票池、行情、市值和行业信息。"""
+
     codes = pd.DataFrame({"ts_code": sorted(universe_members["ts_code"].unique().tolist())})
     trading_days = trading_days.rename(columns={"trade_date": "trade_date_text"})
     trading_days["trade_date"] = pd.to_datetime(trading_days["trade_date_text"], format="%Y%m%d")
@@ -183,6 +205,8 @@ def _build_panel(
 
 
 def _build_forward_returns(panel: pd.DataFrame) -> pd.DataFrame:
+    """构造未来收益: 基于复权开盘价生成 1/5/20 日 forward returns。"""
+
     ordered = panel.sort_values(["ts_code", "trade_date"]).copy()
     grouped = ordered.groupby("ts_code", sort=False)["open_hfq"]
     entry_open = grouped.shift(-1)
@@ -193,14 +217,20 @@ def _build_forward_returns(panel: pd.DataFrame) -> pd.DataFrame:
     return result.sort_values(["trade_date", "ts_code"])
 
 
+# ============== 写出入口 ==============
 def prepare_fixed_dataset(
     *,
     config: ExperimentConfig,
     output_path: str | Path,
 ) -> PreparedDataset:
+    """准备固定数据集: 读取源数据、构造标准产物并写入数据集目录。"""
+
     source_data_dir = (config.source_path / "data").resolve()
     if not source_data_dir.exists():
         raise FileNotFoundError(f"zer0share data directory not found: {source_data_dir}")
+
+    start_date = _yyyymmdd(config.date_start)
+    end_date = _yyyymmdd(config.date_end)
 
     conn = duckdb.connect()
     try:
@@ -208,10 +238,10 @@ def prepare_fixed_dataset(
         universe_members = _read_universe_members(conn, source_data_dir, config)
         if universe_members.empty:
             raise ValueError("source universe is empty for the requested date range")
-        codes = pd.DataFrame({"ts_code": sorted(universe_members["ts_code"].unique().tolist())})
-        conn.register("codes", codes)
-        start_date = _yyyymmdd(config.date_start)
-        end_date = _yyyymmdd(config.date_end)
+
+        universe_codes = pd.DataFrame({"ts_code": sorted(universe_members["ts_code"].unique().tolist())})
+        conn.register("codes", universe_codes)
+
         daily_kline = _read_table_for_codes(
             conn,
             str(source_data_dir / "stock" / "daily_kline" / "date=*" / "data.parquet"),
@@ -240,6 +270,7 @@ def prepare_fixed_dataset(
     finally:
         conn.close()
 
+    # 保持 panel 和 forward_returns 的结构不变，只整理主流程的扫读顺序。
     panel = _build_panel(trading_days, universe_members, daily_kline, daily_basic, adj_factor, ci_members)
     panel = panel.replace([np.inf, -np.inf], np.nan)
     forward_returns = _build_forward_returns(panel)
@@ -266,8 +297,10 @@ def prepare_fixed_dataset(
     output_dir.mkdir(parents=True, exist_ok=True)
     panel.to_parquet(output_dir / "panel.parquet", index=False)
     forward_returns.to_parquet(output_dir / "forward_returns.parquet", index=False)
+
     with (output_dir / "manifest.json").open("w", encoding="utf-8") as handle:
         json.dump(manifest, handle, ensure_ascii=False, indent=2)
+
     readme = "\n".join(
         [
             f"# Dataset {config.dataset_id}",
