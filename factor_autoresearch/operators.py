@@ -1,276 +1,174 @@
+"""
+算子库模块
+定义因子 DSL 使用的基础算子与注册表。
+命名约定：
+- 二元基础算子使用 add/sub/mul/div
+- 时间序列算子使用 ts_ 前缀
+- 截面算子使用 cs_ 前缀
+"""
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 
-OperatorKind = Literal["single_arg", "binary", "window"]
-
-
-class OperatorFunc(Protocol):
-    def __call__(
-        self,
-        series: pd.Series,
-        other: pd.Series | float | None = None,
-        *,
-        panel: pd.DataFrame | None = None,
-        window: int | None = None,
-    ) -> pd.Series: ...
+OperatorKind = Literal["unary", "binary", "window", "panel"]
 
 
 @dataclass(frozen=True)
 class OperatorSpec:
+    """算子描述: 记录调用类型、参数个数和实现函数。"""
+
     name: str
     kind: OperatorKind
     arg_count: int
-    func: OperatorFunc
+    func: Callable[..., pd.Series]
 
 
-def _coerce_series(value: pd.Series | float, other: pd.Series | float) -> pd.Series:
-    if isinstance(value, pd.Series):
-        return value.astype(float)
-    if isinstance(other, pd.Series):
-        return pd.Series(float(value), index=other.index, dtype=float)
-    return pd.Series(float(value), dtype=float)
+# ============== 基础辅助函数 ==============
+def div0(x: pd.Series, y: pd.Series | float) -> pd.Series:
+    """安全除法: 执行 x / y，并把除零结果处理为 NaN。"""
+    if isinstance(y, pd.Series):
+        z = x / y.replace(0, np.nan)
+    else:
+        z = x / (np.nan if y == 0 else y)
+    return z.replace([np.inf, -np.inf], np.nan)
 
 
-def safe_divide(left: pd.Series | float, right: pd.Series | float) -> pd.Series:
-    left_series = _coerce_series(left, right)
-    right_series = _coerce_series(right, left)
-    result = left_series / right_series.replace(0, np.nan)
-    return result.replace([np.inf, -np.inf], np.nan)
+def _by(x: pd.Series) -> pd.core.groupby.generic.SeriesGroupBy:
+    """按股票分组: 供时间序列算子复用。"""
+    return x.groupby(level="ts_code", sort=False)
 
 
-def sanitize_series(series: pd.Series) -> pd.Series:
-    return series.replace([np.inf, -np.inf], np.nan)
+# ============== 基础算术算子 ==============
+def add(x: pd.Series, y: pd.Series | float) -> pd.Series:
+    """加法: x + y"""
+    return x + y
 
 
-def _group_by_code(series: pd.Series) -> pd.core.groupby.generic.SeriesGroupBy:
-    return series.groupby(level="ts_code", sort=False)
+def sub(x: pd.Series, y: pd.Series | float) -> pd.Series:
+    """减法: x - y"""
+    return x - y
 
 
-def _require_panel(panel: pd.DataFrame | None) -> pd.DataFrame:
-    if panel is None:
-        raise ValueError("panel is required for this operator")
-    return panel
+def mul(x: pd.Series, y: pd.Series | float) -> pd.Series:
+    """乘法: x * y"""
+    return x * y
 
 
-def _require_other(other: pd.Series | float | None, name: str) -> pd.Series | float:
-    if other is None:
-        raise ValueError(f"{name} requires a second operand")
-    return other
+def div(x: pd.Series, y: pd.Series | float) -> pd.Series:
+    """除法: x / y，并处理除零。"""
+    return div0(x, y)
 
 
-# Basic arithmetic operators keep only the math definition and minimal protection.
-def op_add(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    return sanitize_series(series + _require_other(other, "add"))
+# ============== 单参数算子 ==============
+def abs_(x: pd.Series) -> pd.Series:
+    """绝对值: |x|"""
+    return x.abs()
 
 
-def op_sub(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    return sanitize_series(series - _require_other(other, "sub"))
+def log(x: pd.Series) -> pd.Series:
+    """自然对数: log(x)，非正数位置保留为 NaN。"""
+    return np.log(x.where(x > 0))
 
 
-def op_mul(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    return sanitize_series(series * _require_other(other, "mul"))
+# ============== 时间序列算子 ==============
+def delay(x: pd.Series, d: int) -> pd.Series:
+    """延迟算子: 返回 d 天前的取值。"""
+    return _by(x).shift(d)
 
 
-def op_div(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    return safe_divide(series, _require_other(other, "div"))
+def ts_mean(x: pd.Series, d: int) -> pd.Series:
+    """滚动均值: 返回过去 d 天的平均值。"""
+    g = _by(x)
+    return g.transform(lambda v: v.rolling(d, min_periods=d).mean())
 
 
-# Unary, time-series, and cross-sectional operators keep the panel semantics.
-def op_abs(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    return series.abs()
+def ts_std(x: pd.Series, d: int) -> pd.Series:
+    """滚动标准差: 返回过去 d 天的标准差。"""
+    g = _by(x)
+    return g.transform(lambda v: v.rolling(d, min_periods=d).std(ddof=0))
 
 
-def op_log(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    result = pd.Series(np.nan, index=series.index, dtype=float)
-    positive = series > 0
-    result.loc[positive] = np.log(series.loc[positive])
-    return result
+def ts_delta(x: pd.Series, d: int) -> pd.Series:
+    """差分算子: x - delay(x, d)"""
+    g = _by(x)
+    return x - g.shift(d)
 
 
-def op_delay(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    if window is None:
-        raise ValueError("window is required for delay")
-    return _group_by_code(series).shift(window)
+def ts_return(x: pd.Series, d: int) -> pd.Series:
+    """收益率: x 相对 d 天前取值的变化比例。"""
+    g = _by(x)
+    return div0(x, g.shift(d)) - 1.0
 
 
-def op_ts_mean(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    if window is None:
-        raise ValueError("window is required for ts_mean")
-    grouped = _group_by_code(series)
-    return grouped.transform(lambda values: values.rolling(window, min_periods=window).mean())
-
-
-def op_ts_std(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    if window is None:
-        raise ValueError("window is required for ts_std")
-    grouped = _group_by_code(series)
-    return grouped.transform(lambda values: values.rolling(window, min_periods=window).std(ddof=0))
-
-
-def op_ts_delta(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    if window is None:
-        raise ValueError("window is required for ts_delta")
-    grouped = _group_by_code(series)
-    return series - grouped.shift(window)
-
-
-def op_ts_return(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    if window is None:
-        raise ValueError("window is required for ts_return")
-    grouped = _group_by_code(series)
-    return safe_divide(series, grouped.shift(window)) - 1.0
-
-
-def op_ts_rank(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    if window is None:
-        raise ValueError("window is required for ts_rank")
-    grouped = _group_by_code(series)
-    return grouped.transform(
-        lambda values: values.rolling(window, min_periods=window).apply(
-            lambda bucket: pd.Series(bucket).rank(pct=True).iloc[-1],
+def ts_rank(x: pd.Series, d: int) -> pd.Series:
+    """时序分位: 当前值在过去 d 天窗口内的分位排名。"""
+    g = _by(x)
+    return g.transform(
+        lambda v: v.rolling(d, min_periods=d).apply(
+            lambda b: pd.Series(b).rank(pct=True).iloc[-1],
             raw=False,
         )
     )
 
 
-def op_cs_rank(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    panel = _require_panel(panel)
-    result = pd.Series(np.nan, index=series.index, dtype=float)
-    mask = panel["in_universe"].fillna(False)
-    result.loc[mask] = series.loc[mask].groupby(level="trade_date", sort=False).transform(
-        lambda values: values.rank(method="average", pct=True)
+# ============== 截面算子 ==============
+def cs_rank(x: pd.Series, p: pd.DataFrame) -> pd.Series:
+    """截面分位: 返回当日股票池内的分位排名。"""
+    out = pd.Series(np.nan, index=x.index, dtype=float)
+    m = p["in_universe"].fillna(False)
+    out.loc[m] = x.loc[m].groupby(level="trade_date", sort=False).transform(
+        lambda v: v.rank(method="average", pct=True)
     )
-    return result
+    return out
 
 
-def op_cs_zscore(
-    series: pd.Series,
-    other: pd.Series | float | None = None,
-    *,
-    panel: pd.DataFrame | None = None,
-    window: int | None = None,
-) -> pd.Series:
-    panel = _require_panel(panel)
+def cs_zscore(x: pd.Series, p: pd.DataFrame) -> pd.Series:
+    """截面标准化: 返回当日股票池内的 z-score。"""
 
-    def _zscore(values: pd.Series) -> pd.Series:
-        std = values.std(ddof=0)
-        if pd.isna(std) or std == 0:
-            return pd.Series(np.nan, index=values.index, dtype=float)
-        return (values - values.mean()) / std
+    def z(v: pd.Series) -> pd.Series:
+        """单日标准化: 对单个交易日截面做 z-score。"""
+        s = v.std(ddof=0)
+        if pd.isna(s) or s == 0:
+            return pd.Series(np.nan, index=v.index, dtype=float)
+        return (v - v.mean()) / s
 
-    result = pd.Series(np.nan, index=series.index, dtype=float)
-    mask = panel["in_universe"].fillna(False)
-    result.loc[mask] = series.loc[mask].groupby(level="trade_date", sort=False).transform(_zscore)
-    return result
+    out = pd.Series(np.nan, index=x.index, dtype=float)
+    m = p["in_universe"].fillna(False)
+    out.loc[m] = x.loc[m].groupby(level="trade_date", sort=False).transform(z)
+    return out
 
 
-# The combined registry is the single place to inspect all supported operators.
+# ============== 算子注册表 ==============
 INFIX_OPERATOR_REGISTRY: dict[str, OperatorSpec] = {
-    "add": OperatorSpec(name="add", kind="binary", arg_count=2, func=op_add),
-    "sub": OperatorSpec(name="sub", kind="binary", arg_count=2, func=op_sub),
-    "mul": OperatorSpec(name="mul", kind="binary", arg_count=2, func=op_mul),
-    "div": OperatorSpec(name="div", kind="binary", arg_count=2, func=op_div),
+    "add": OperatorSpec(name="add", kind="binary", arg_count=2, func=add),
+    "sub": OperatorSpec(name="sub", kind="binary", arg_count=2, func=sub),
+    "mul": OperatorSpec(name="mul", kind="binary", arg_count=2, func=mul),
+    "div": OperatorSpec(name="div", kind="binary", arg_count=2, func=div),
 }
 
 
 FUNCTION_OPERATOR_REGISTRY: dict[str, OperatorSpec] = {
-    "abs": OperatorSpec(name="abs", kind="single_arg", arg_count=1, func=op_abs),
-    "log": OperatorSpec(name="log", kind="single_arg", arg_count=1, func=op_log),
-    "delay": OperatorSpec(name="delay", kind="window", arg_count=2, func=op_delay),
-    "ts_mean": OperatorSpec(name="ts_mean", kind="window", arg_count=2, func=op_ts_mean),
-    "ts_std": OperatorSpec(name="ts_std", kind="window", arg_count=2, func=op_ts_std),
-    "ts_delta": OperatorSpec(name="ts_delta", kind="window", arg_count=2, func=op_ts_delta),
-    "ts_return": OperatorSpec(name="ts_return", kind="window", arg_count=2, func=op_ts_return),
-    "ts_rank": OperatorSpec(name="ts_rank", kind="window", arg_count=2, func=op_ts_rank),
-    "cs_rank": OperatorSpec(name="cs_rank", kind="single_arg", arg_count=1, func=op_cs_rank),
-    "cs_zscore": OperatorSpec(name="cs_zscore", kind="single_arg", arg_count=1, func=op_cs_zscore),
+    "abs": OperatorSpec(name="abs", kind="unary", arg_count=1, func=abs_),
+    "log": OperatorSpec(name="log", kind="unary", arg_count=1, func=log),
+    "delay": OperatorSpec(name="delay", kind="window", arg_count=2, func=delay),
+    "ts_mean": OperatorSpec(name="ts_mean", kind="window", arg_count=2, func=ts_mean),
+    "ts_std": OperatorSpec(name="ts_std", kind="window", arg_count=2, func=ts_std),
+    "ts_delta": OperatorSpec(name="ts_delta", kind="window", arg_count=2, func=ts_delta),
+    "ts_return": OperatorSpec(name="ts_return", kind="window", arg_count=2, func=ts_return),
+    "ts_rank": OperatorSpec(name="ts_rank", kind="window", arg_count=2, func=ts_rank),
+    "cs_rank": OperatorSpec(name="cs_rank", kind="panel", arg_count=1, func=cs_rank),
+    "cs_zscore": OperatorSpec(name="cs_zscore", kind="panel", arg_count=1, func=cs_zscore),
 }
 
 
 OPERATOR_REGISTRY: dict[str, OperatorSpec] = {
+    # 统一从这里查看当前 DSL 支持的全部算子。
     **INFIX_OPERATOR_REGISTRY,
     **FUNCTION_OPERATOR_REGISTRY,
 }
