@@ -1,3 +1,10 @@
+"""
+候选因子加载模块: 负责读取、校验并返回候选 JSONL 数据。
+边界约定:
+- forbidden fields、required fields 和重复 id 校验保留在这里
+- 下游默认接收已经过结构校验的 Candidate 对象
+"""
+
 from __future__ import annotations
 
 import json
@@ -6,6 +13,8 @@ from pathlib import Path
 
 from factor_autoresearch.config import ExperimentConfig
 
+
+# ============== 字段规则 ==============
 FORBIDDEN_FIELDS = {
     "universe",
     "date_start",
@@ -14,14 +23,28 @@ FORBIDDEN_FIELDS = {
     "gate",
     "data_source",
 }
+REQUIRED_FIELDS = {
+    "id",
+    "name",
+    "expression",
+    "expected_direction",
+    "hypothesis",
+    "category",
+    "lookback_days",
+    "created_at",
+    "notes",
+}
 
 
 class CandidateValidationError(ValueError):
-    """Raised when candidate JSONL content is invalid."""
+    """候选校验异常: 候选 JSONL 内容不符合约束时抛出。"""
 
 
+# ============== 数据结构 ==============
 @dataclass(frozen=True)
 class Candidate:
+    """候选因子: 表示单条通过结构校验的候选记录。"""
+
     candidate_id: str
     name: str
     expression: str
@@ -33,6 +56,8 @@ class Candidate:
     notes: str
 
     def as_dict(self) -> dict[str, object]:
+        """转为字典: 输出时恢复外部使用的 id 字段名。"""
+
         payload = asdict(self)
         payload["id"] = payload.pop("candidate_id")
         return payload
@@ -40,31 +65,27 @@ class Candidate:
 
 @dataclass(frozen=True)
 class InvalidCandidateRecord:
+    """无效候选记录: 记录失败桶和详细报错信息。"""
+
     candidate_id: str
     failure_bucket: str
     details: dict[str, object]
 
 
+# ============== 解析函数 ==============
 def _parse_candidate(raw: dict[str, object], config: ExperimentConfig) -> Candidate:
+    """解析候选: 校验单条记录并构造成 Candidate。"""
+
     forbidden = FORBIDDEN_FIELDS.intersection(raw.keys())
     if forbidden:
         fields = ", ".join(sorted(forbidden))
         raise CandidateValidationError(f"candidate contains forbidden fields: {fields}")
 
-    required = {
-        "id",
-        "name",
-        "expression",
-        "expected_direction",
-        "hypothesis",
-        "category",
-        "lookback_days",
-        "created_at",
-        "notes",
-    }
-    missing = sorted(required.difference(raw.keys()))
-    if missing:
-        raise CandidateValidationError(f"candidate missing required fields: {', '.join(missing)}")
+    missing_fields = sorted(REQUIRED_FIELDS.difference(raw.keys()))
+    if missing_fields:
+        raise CandidateValidationError(
+            f"candidate missing required fields: {', '.join(missing_fields)}"
+        )
 
     expected_direction = str(raw["expected_direction"])
     if expected_direction not in {"positive", "negative"}:
@@ -92,7 +113,10 @@ def _parse_candidate(raw: dict[str, object], config: ExperimentConfig) -> Candid
     )
 
 
+# ============== 加载入口 ==============
 def load_candidates(path: str | Path, config: ExperimentConfig) -> list[Candidate]:
+    """加载候选: 读取文件并在存在无效记录时直接失败。"""
+
     candidates, invalid_records = load_candidate_batch(path, config)
     if invalid_records:
         first = invalid_records[0]
@@ -101,6 +125,8 @@ def load_candidates(path: str | Path, config: ExperimentConfig) -> list[Candidat
 
 
 def load_candidate_batch(path: str | Path, config: ExperimentConfig) -> tuple[list[Candidate], list[InvalidCandidateRecord]]:
+    """批量加载候选: 返回有效候选和无效记录列表。"""
+
     candidate_path = Path(path)
     if not candidate_path.exists():
         raise CandidateValidationError(f"candidate file not found: {candidate_path}")

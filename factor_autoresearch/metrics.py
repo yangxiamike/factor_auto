@@ -1,3 +1,10 @@
+"""
+候选指标模块: 负责计算 IC、RankIC、分组收益与聚合结果。
+命名约定:
+- 单日截面内部沿用 day / valid 这类短名
+- 跨 horizon 聚合时使用更明确的结果名
+"""
+
 from __future__ import annotations
 
 import math
@@ -9,24 +16,33 @@ from factor_autoresearch.config import ExperimentConfig
 from factor_autoresearch.data_loader import DatasetBundle
 
 
+# ============== 指标结果结构 ==============
 @dataclass(frozen=True)
 class MetricsResult:
+    """指标结果: 汇总 horizon 统计、逐日序列和聚合摘要。"""
+
     horizon_rows: pd.DataFrame
     ic_series: pd.DataFrame
     aggregate: dict[str, float | int | str]
 
 
+# ============== 基础辅助函数 ==============
 def _safe_spearman(x: pd.Series, y: pd.Series) -> float:
+    """安全 Spearman: 样本不足时返回 NaN。"""
+
     if len(x) < 2:
         return math.nan
     return float(x.corr(y, method="spearman"))
 
 
 def _assign_quantiles(values: pd.Series, quantiles: int) -> pd.Series:
+    """分配分组桶: 先稳定排序，再按分位数切桶。"""
+
     ranked = values.rank(method="first")
     return pd.qcut(ranked, q=quantiles, labels=False, duplicates="drop")
 
 
+# ============== 候选指标计算 ==============
 def compute_candidate_metrics(
     *,
     candidate_id: str,
@@ -35,6 +51,8 @@ def compute_candidate_metrics(
     config: ExperimentConfig,
     complexity_score: int,
 ) -> MetricsResult:
+    """计算候选指标: 逐个 horizon 产出日度序列和汇总统计。"""
+
     merged = pd.DataFrame({"factor": factor, "in_universe": dataset.panel["in_universe"]}).join(
         dataset.forward_returns, how="left"
     )
@@ -43,12 +61,12 @@ def compute_candidate_metrics(
     )
     gate = config.gate
 
-    horizon_rows: list[dict[str, object]] = []
-    ic_rows: list[dict[str, object]] = []
+    horizon_summary_rows: list[dict[str, object]] = []
+    ic_series_rows: list[dict[str, object]] = []
 
     for horizon in config.horizons:
         return_column = f"fwd_ret_{horizon}"
-        day_rows: list[dict[str, object]] = []
+        day_metric_rows: list[dict[str, object]] = []
         quantile_means_all: list[pd.Series] = []
 
         for trade_date, day in merged.groupby(level="trade_date", sort=False):
@@ -79,7 +97,7 @@ def compute_candidate_metrics(
                 ic = float(valid["factor"].corr(valid[return_column], method="pearson"))
                 rankic = _safe_spearman(valid["factor"], valid[return_column])
 
-            day_rows.append(
+            day_metric_rows.append(
                 {
                     "candidate_id": candidate_id,
                     "trade_date": trade_date,
@@ -94,8 +112,8 @@ def compute_candidate_metrics(
                 }
             )
 
-        day_frame = pd.DataFrame(day_rows)
-        ic_rows.extend(day_rows)
+        day_frame = pd.DataFrame(day_metric_rows)
+        ic_series_rows.extend(day_metric_rows)
         effective_trade_days = int(day_frame["ic"].notna().sum())
         ic_mean = float(day_frame["ic"].mean()) if not day_frame.empty else math.nan
         rankic_mean = float(day_frame["rankic"].mean()) if not day_frame.empty else math.nan
@@ -117,7 +135,7 @@ def compute_candidate_metrics(
                     quantile_frame[bucket].mean()
                 )
 
-        horizon_rows.append(
+        horizon_summary_rows.append(
             {
                 "candidate_id": candidate_id,
                 "horizon": horizon,
@@ -133,7 +151,7 @@ def compute_candidate_metrics(
             }
         )
 
-    horizon_frame = pd.DataFrame(horizon_rows)
+    horizon_frame = pd.DataFrame(horizon_summary_rows)
     coverage_values = horizon_frame["coverage_mean"].dropna()
     aggregate = {
         "candidate_id": candidate_id,
@@ -145,6 +163,6 @@ def compute_candidate_metrics(
     }
     return MetricsResult(
         horizon_rows=horizon_frame,
-        ic_series=pd.DataFrame(ic_rows),
+        ic_series=pd.DataFrame(ic_series_rows),
         aggregate=aggregate,
     )
