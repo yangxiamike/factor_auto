@@ -13,7 +13,6 @@ from pathlib import Path
 
 from factor_autoresearch.config import ExperimentConfig
 
-
 # ============== 字段规则 ==============
 FORBIDDEN_FIELDS = {
     "universe",

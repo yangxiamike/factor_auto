@@ -11,7 +11,6 @@ from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.gate import GateDecision
 from factor_autoresearch.metrics import MetricsResult
 
-
 # ============== 注册表写入 ==============
 
 class RegistryWriter:

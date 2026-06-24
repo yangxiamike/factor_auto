@@ -9,7 +9,6 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-
 # ============== 配置哈希 ==============
 
 def _hash_payload(payload: dict[str, Any]) -> str:

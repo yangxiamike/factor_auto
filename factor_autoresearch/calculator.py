@@ -19,7 +19,6 @@ from factor_autoresearch.expression import (
 )
 from factor_autoresearch.operators import OPERATOR_REGISTRY, OperatorSpec
 
-
 _BINARY_OPERATOR_NAMES: dict[type[ast.operator], str] = {
     ast.Add: "add",
     ast.Sub: "sub",
