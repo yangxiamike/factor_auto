@@ -18,14 +18,29 @@ from factor_autoresearch.artifacts import ArtifactWriter
 from factor_autoresearch.calculator import ExpressionValidationError, FactorCalc
 from factor_autoresearch.candidates import Candidate, load_candidate_batch
 from factor_autoresearch.compute_v1.calculator import V1FactorCalc
+from factor_autoresearch.compute_v1.diagnostics import build_metrics_diagnostics
+from factor_autoresearch.compute_v1.metrics import (
+    build_returns_cube,
+    compute_candidate_metrics_from_matrix,
+)
+from factor_autoresearch.compute_v1.metrics import (
+    compute_candidate_metrics as compute_v1_metrics,
+)
+from factor_autoresearch.compute_v1.panel import PanelStore
+from factor_autoresearch.compute_v1.preprocess import (
+    build_industry_matrix,
+    build_neutralization_design,
+    preprocess_factor_matrix,
+)
 from factor_autoresearch.config import ExperimentConfig
 from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.data_loader import DataLoader, DatasetBundle
 from factor_autoresearch.engine.parallel import run_ordered
 from factor_autoresearch.gate import GateDecision, apply_candidate_gate
 from factor_autoresearch.logging_config import configure_logging
-from factor_autoresearch.metrics import MetricsResult, compute_candidate_metrics
-from factor_autoresearch.preprocess import preprocess_factor
+from factor_autoresearch.metrics import MetricsResult
+from factor_autoresearch.metrics import compute_candidate_metrics as compute_legacy_metrics
+from factor_autoresearch.preprocess import preprocess_factor as preprocess_factor_legacy
 from factor_autoresearch.registry import RegistryWriter
 
 LOGGER = logging.getLogger(__name__)
@@ -49,6 +64,8 @@ class CandidateEvaluation:
     metrics_result: MetricsResult | None
     raw_factor: pd.Series | None = None
     processed_factor: pd.Series | None = None
+    raw_factor_matrix: Any = None
+    processed_factor_matrix: Any = None
     decision: GateDecision | None = None
 
 
@@ -124,11 +141,16 @@ class Evaluator:
         self.loader = DataLoader(config=context.config, dataset_path=context.dataset_path)
         self.registry = RegistryWriter(context.registry_path)
         self.artifacts = ArtifactWriter(context)
+        self._v1_panel_store: PanelStore | None = None
+        self._v1_industry_matrix: Any = None
+        self._v1_returns_cube: Any = None
+        self._v1_neutralization_design: Any = None
 
     def evaluate_batch(self) -> EvaluationArtifacts:
         """批量评估: 执行整批候选因子的加载、评估、汇总与写出。"""
 
         dataset = self.loader.load()
+        self._prepare_v1_runtime(dataset)
         candidates, invalid_records = load_candidate_batch(self.context.candidates_path, self.context.config)
         self.artifacts.prepare_run_dir()
         configure_logging(
@@ -147,14 +169,25 @@ class Evaluator:
         results = self._collect_invalid_results(invalid_records)
         metric_frames: list[pd.DataFrame] = []
         ic_frames: list[pd.DataFrame] = []
+        diagnostics_frames: list[pd.DataFrame] = []
 
         for evaluation in self._evaluate_candidates(candidates, dataset):
             result, metrics_result = self._commit_candidate_evaluation(evaluation)
             results.append(result)
-            self._append_metrics_frames(metrics_result, metric_frames, ic_frames)
+            self._append_metrics_frames(metrics_result, metric_frames, ic_frames, diagnostics_frames)
 
-        metrics_frame, ic_series_frame = self._combine_metric_frames(metric_frames, ic_frames)
-        self._write_batch_outputs(results, metrics_frame, ic_series_frame, dataset.manifest)
+        metrics_frame, ic_series_frame, diagnostics_frame = self._combine_metric_frames(
+            metric_frames,
+            ic_frames,
+            diagnostics_frames,
+        )
+        self._write_batch_outputs(
+            results,
+            metrics_frame,
+            ic_series_frame,
+            diagnostics_frame,
+            dataset.manifest,
+        )
         LOGGER.info(
             "evaluation batch completed",
             extra={"run_id": self.context.run_id, "stage": "batch"},
@@ -200,14 +233,15 @@ class Evaluator:
     ) -> CandidateEvaluation:
         """Compute one candidate without writing artifacts or registry records."""
 
-        LOGGER.info(
-            "evaluating candidate",
-            extra={
-                "run_id": self.context.run_id,
-                "candidate_id": candidate.candidate_id,
-                "stage": "candidate",
-            },
-        )
+        if self.context.verbose:
+            LOGGER.info(
+                "evaluating candidate",
+                extra={
+                    "run_id": self.context.run_id,
+                    "candidate_id": candidate.candidate_id,
+                    "stage": "candidate",
+                },
+            )
         try:
             metadata = self.factor_calc.validate_candidate(candidate)
         except ExpressionValidationError as exc:
@@ -223,15 +257,29 @@ class Evaluator:
             )
 
         try:
-            raw_factor = self.factor_calc.calculate(candidate, dataset)
-            processed_factor = preprocess_factor(raw_factor, dataset, self.context.config)
-            metrics_result = compute_candidate_metrics(
-                candidate_id=candidate.candidate_id,
-                factor=processed_factor,
-                dataset=dataset,
-                config=self.context.config,
-                complexity_score=metadata.complexity_score,
-            )
+            raw_factor = None
+            processed_factor = None
+            raw_factor_matrix = None
+            processed_factor_matrix = None
+
+            if self.context.engine == "v1":
+                panel_store = self._require_v1_panel_store()
+                raw_factor_matrix = self.factor_calc.calculate_matrix(candidate, dataset, panel_store)
+                processed_factor_matrix = self._preprocess_factor_matrix(raw_factor_matrix)
+                metrics_result = self._compute_v1_metrics_from_matrix(
+                    candidate_id=candidate.candidate_id,
+                    factor_matrix=processed_factor_matrix,
+                    complexity_score=metadata.complexity_score,
+                )
+            else:
+                raw_factor = self.factor_calc.calculate(candidate, dataset)
+                processed_factor = self._preprocess_factor(raw_factor, dataset)
+                metrics_result = self._compute_metrics(
+                    candidate_id=candidate.candidate_id,
+                    factor=processed_factor,
+                    dataset=dataset,
+                    complexity_score=metadata.complexity_score,
+                )
             decision = apply_candidate_gate(candidate, metrics_result, self.context.config)
             return CandidateEvaluation(
                 candidate=candidate,
@@ -239,6 +287,8 @@ class Evaluator:
                 metrics_result=metrics_result,
                 raw_factor=raw_factor,
                 processed_factor=processed_factor,
+                raw_factor_matrix=raw_factor_matrix,
+                processed_factor_matrix=processed_factor_matrix,
                 decision=decision,
             )
         except Exception as exc:  # noqa: BLE001
@@ -261,11 +311,67 @@ class Evaluator:
                 metrics_result=None,
             )
 
+    def _preprocess_factor(self, raw_factor: pd.Series, dataset: DatasetBundle) -> pd.Series:
+        """Preprocess factor values through the selected engine path."""
+
+        return preprocess_factor_legacy(raw_factor, dataset, self.context.config)
+
+    def _compute_metrics(
+        self,
+        *,
+        candidate_id: str,
+        factor: pd.Series,
+        dataset: DatasetBundle,
+        complexity_score: int,
+    ) -> MetricsResult:
+        """Compute candidate metrics through the selected engine path."""
+
+        if self.context.engine == "v1":
+            return compute_v1_metrics(
+                candidate_id=candidate_id,
+                factor=factor,
+                dataset=dataset,
+                config=self.context.config,
+                complexity_score=complexity_score,
+            )
+
+        return compute_legacy_metrics(
+            candidate_id=candidate_id,
+            factor=factor,
+            dataset=dataset,
+            config=self.context.config,
+            complexity_score=complexity_score,
+        )
+
     def _commit_candidate_evaluation(
         self,
         evaluation: CandidateEvaluation,
     ) -> tuple[dict[str, Any], MetricsResult | None]:
         """Return a computed candidate result after coordinator-side artifact work."""
+
+        if (
+            evaluation.metrics_result is not None
+            and evaluation.raw_factor is None
+            and evaluation.processed_factor is None
+            and evaluation.raw_factor_matrix is not None
+            and evaluation.processed_factor_matrix is not None
+            and evaluation.decision is not None
+        ):
+            raw_factor, processed_factor = self._materialize_v1_factor_series(
+                evaluation.candidate.candidate_id,
+                evaluation.raw_factor_matrix,
+                evaluation.processed_factor_matrix,
+            )
+            evaluation = CandidateEvaluation(
+                candidate=evaluation.candidate,
+                result=evaluation.result,
+                metrics_result=evaluation.metrics_result,
+                raw_factor=raw_factor,
+                processed_factor=processed_factor,
+                raw_factor_matrix=evaluation.raw_factor_matrix,
+                processed_factor_matrix=evaluation.processed_factor_matrix,
+                decision=evaluation.decision,
+            )
 
         if (
             evaluation.metrics_result is None
@@ -298,6 +404,42 @@ class Evaluator:
         """单因子评估: 返回候选评估结果，并隔离运行时异常。"""
 
         return self._commit_candidate_evaluation(self._evaluate_candidate_core(candidate, dataset))
+
+    def _prepare_v1_runtime(self, dataset: DatasetBundle) -> None:
+        """Precompute dense v1 runtime structures once per batch."""
+
+        if self.context.engine != "v1":
+            self._v1_panel_store = None
+            self._v1_industry_matrix = None
+            self._v1_returns_cube = None
+            self._v1_neutralization_design = None
+            return
+
+        panel_store, returns_cube = build_returns_cube(dataset, self.context.config)
+        self._v1_panel_store = panel_store
+        self._v1_returns_cube = returns_cube
+        self._v1_industry_matrix = build_industry_matrix(dataset.panel["industry"], panel_store)
+        self._v1_neutralization_design = build_neutralization_design(panel_store, self._v1_industry_matrix)
+
+    def _require_v1_panel_store(self) -> PanelStore:
+        if self._v1_panel_store is None:
+            raise RuntimeError("v1 panel store was not prepared")
+        return self._v1_panel_store
+
+    def _require_v1_industry_matrix(self) -> Any:
+        if self._v1_industry_matrix is None:
+            raise RuntimeError("v1 industry matrix was not prepared")
+        return self._v1_industry_matrix
+
+    def _require_v1_returns_cube(self) -> Any:
+        if self._v1_returns_cube is None:
+            raise RuntimeError("v1 returns cube was not prepared")
+        return self._v1_returns_cube
+
+    def _require_v1_neutralization_design(self) -> Any:
+        if self._v1_neutralization_design is None:
+            raise RuntimeError("v1 neutralization design was not prepared")
+        return self._v1_neutralization_design
 
     def _build_run_manifest(self, candidate_count: int, dataset_manifest: dict[str, Any]) -> dict[str, Any]:
         """运行清单: 组装本次评估批次的 manifest 内容。"""
@@ -344,6 +486,7 @@ class Evaluator:
         metrics_result: MetricsResult | None,
         metric_frames: list[pd.DataFrame],
         ic_frames: list[pd.DataFrame],
+        diagnostics_frames: list[pd.DataFrame],
     ) -> None:
         """指标帧追加: 把单候选指标结果追加到批量聚合容器。"""
 
@@ -351,30 +494,101 @@ class Evaluator:
             return
         metric_frames.append(metrics_result.horizon_rows)
         ic_frames.append(metrics_result.ic_series)
+        if self.context.engine == "v1":
+            diagnostics_frames.append(self._build_v1_diagnostics_frame(metrics_result))
 
     def _combine_metric_frames(
         self,
         metric_frames: list[pd.DataFrame],
         ic_frames: list[pd.DataFrame],
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        diagnostics_frames: list[pd.DataFrame],
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """指标帧合并: 合并批量评估过程中累积的指标明细。"""
 
         metrics_frame = pd.concat(metric_frames, ignore_index=True) if metric_frames else pd.DataFrame()
         ic_series_frame = pd.concat(ic_frames, ignore_index=True) if ic_frames else pd.DataFrame()
-        return metrics_frame, ic_series_frame
+        diagnostics_frame = (
+            pd.concat(diagnostics_frames, ignore_index=True, sort=False)
+            if diagnostics_frames
+            else pd.DataFrame()
+        )
+        return metrics_frame, ic_series_frame, diagnostics_frame
+
+    def _build_v1_diagnostics_frame(self, metrics_result: MetricsResult) -> pd.DataFrame:
+        """Flatten v1 diagnostics tables into one parquet-friendly frame."""
+
+        diagnostics = build_metrics_diagnostics(metrics_result)
+        frames: list[pd.DataFrame] = []
+        for table_name, frame in (
+            ("horizon_table", diagnostics.horizon_table),
+            ("daily_summary_table", diagnostics.daily_summary_table),
+            ("quantile_table", diagnostics.quantile_table),
+            ("aggregate_table", diagnostics.aggregate_table),
+        ):
+            if frame.empty:
+                continue
+            tagged = frame.copy()
+            tagged.insert(0, "table_name", table_name)
+            frames.append(tagged)
+        if not frames:
+            return pd.DataFrame(columns=["table_name"])
+        return pd.concat(frames, ignore_index=True, sort=False)
 
     def _write_batch_outputs(
         self,
         results: list[dict[str, Any]],
         metrics_frame: pd.DataFrame,
         ic_series_frame: pd.DataFrame,
+        diagnostics_frame: pd.DataFrame,
         dataset_manifest: dict[str, Any],
     ) -> None:
         """批量结果写出: 统一写出结果明细与 summary 文本。"""
 
-        self.artifacts.write_results(results, metrics_frame, ic_series_frame)
+        self.artifacts.write_results(results, metrics_frame, ic_series_frame, diagnostics_frame)
         summary_text = self._render_summary(results, metrics_frame, dataset_manifest)
         self.artifacts.write_summary(summary_text)
+
+    def _preprocess_factor_matrix(self, raw_factor_matrix: Any) -> Any:
+        """Run the v1 preprocess path on a dense factor matrix."""
+
+        return preprocess_factor_matrix(
+            raw_factor_matrix,
+            self._require_v1_panel_store(),
+            self.context.config,
+            self._require_v1_industry_matrix(),
+            self._require_v1_neutralization_design(),
+        )
+
+    def _compute_v1_metrics_from_matrix(
+        self,
+        *,
+        candidate_id: str,
+        factor_matrix: Any,
+        complexity_score: int,
+    ) -> MetricsResult:
+        """Compute v1 metrics with shared dense runtime structures."""
+
+        return compute_candidate_metrics_from_matrix(
+            candidate_id=candidate_id,
+            factor_matrix=factor_matrix,
+            panel_store=self._require_v1_panel_store(),
+            returns_cube=self._require_v1_returns_cube(),
+            config=self.context.config,
+            complexity_score=complexity_score,
+        )
+
+    def _materialize_v1_factor_series(
+        self,
+        candidate_id: str,
+        raw_factor_matrix: Any,
+        processed_factor_matrix: Any,
+    ) -> tuple[pd.Series, pd.Series]:
+        """Convert v1 dense matrices to legacy-compatible series only when writing artifacts."""
+
+        panel_store = self._require_v1_panel_store()
+        raw_factor = panel_store.to_series(candidate_id, raw_factor_matrix)
+        processed_factor = panel_store.to_series(candidate_id, processed_factor_matrix)
+        return raw_factor, processed_factor
 
     def _render_summary(
         self,

@@ -37,4 +37,12 @@ def test_evaluator_writes_artifacts(sample_dataset_dir, tmp_path, test_config) -
     artifacts = evaluator.evaluate_batch()
     assert (artifacts.run_dir / "summary.md").exists()
     assert (artifacts.run_dir / "logs" / "evaluate.log").exists()
-    assert (artifacts.run_dir / "results" / "candidate_results.jsonl").exists()
+    assert (artifacts.run_dir / "manifest.json").exists()
+    assert {
+        path.name for path in (artifacts.run_dir / "results").iterdir() if path.is_file()
+    } == {
+        "candidate_results.jsonl",
+        "metrics.parquet",
+        "ic_series.parquet",
+        "diagnostics.parquet",
+    }

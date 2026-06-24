@@ -69,6 +69,7 @@ class ArtifactWriter:
         results: list[dict[str, Any]],
         metrics_frame: pd.DataFrame,
         ic_series_frame: pd.DataFrame,
+        diagnostics_frame: pd.DataFrame | None = None,
     ) -> dict[str, Path]:
         """写出候选结果、指标表和 IC 序列表。"""
         self.context.results_dir.mkdir(parents=True, exist_ok=True)
@@ -78,10 +79,16 @@ class ArtifactWriter:
                 handle.write(json.dumps(result, ensure_ascii=False) + "\n")
         metrics_path = self.context.results_dir / "metrics.parquet"
         ic_series_path = self.context.results_dir / "ic_series.parquet"
+        diagnostics_path = self.context.results_dir / "diagnostics.parquet"
         metrics_frame.to_parquet(metrics_path, index=False)
         ic_series_frame.to_parquet(ic_series_path, index=False)
+        (diagnostics_frame if diagnostics_frame is not None else pd.DataFrame()).to_parquet(
+            diagnostics_path,
+            index=False,
+        )
         return {
             "results": results_path,
             "metrics": metrics_path,
             "ic_series": ic_series_path,
+            "diagnostics": diagnostics_path,
         }

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Any, TypeVar
 
 T = TypeVar("T")
+AUTO_MAX_WORKERS = 3
+AUTO_SERIAL_THRESHOLD = 32
 
 
 @dataclass(frozen=True)
@@ -30,8 +32,10 @@ def parse_jobs(jobs: str | int, candidate_count: int) -> int:
     if candidate_count == 0:
         return 1
     if jobs == "auto":
+        if candidate_count <= AUTO_SERIAL_THRESHOLD:
+            return 1
         detected = os.cpu_count() or 1
-        return max(1, min(detected, candidate_count))
+        return max(1, min(detected, candidate_count, AUTO_MAX_WORKERS))
     if isinstance(jobs, bool) or not isinstance(jobs, int):
         raise ValueError("jobs must be 'auto' or a positive integer.")
     if jobs <= 0:

@@ -8,7 +8,12 @@ from factor_autoresearch.engine.routing import get_engine_module, normalize_engi
 
 def test_parse_jobs_auto_caps_to_candidate_count(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("factor_autoresearch.engine.parallel.os.cpu_count", lambda: 8)
-    assert parse_jobs("auto", candidate_count=3) == 3
+    assert parse_jobs("auto", candidate_count=3) == 1
+
+
+def test_parse_jobs_auto_uses_parallel_cap_for_larger_batches(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("factor_autoresearch.engine.parallel.os.cpu_count", lambda: 8)
+    assert parse_jobs("auto", candidate_count=64) == 3
 
 
 def test_parse_jobs_positive_integer_caps_to_candidate_count() -> None:

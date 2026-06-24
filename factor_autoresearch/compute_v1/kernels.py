@@ -52,10 +52,14 @@ def ts_rank(x: np.ndarray, d: int) -> np.ndarray:
     out = np.full_like(values, np.nan, dtype=float)
     for row in range(d - 1, values.shape[0]):
         window = values[row - d + 1 : row + 1, :]
-        valid = np.isfinite(window).sum(axis=0) == d
-        for col in np.flatnonzero(valid):
-            ranks = pd.Series(window[:, col]).rank(method="average", pct=True)
-            out[row, col] = float(ranks.iloc[-1])
+        valid = np.isfinite(window).all(axis=0)
+        if not np.any(valid):
+            continue
+        last = window[-1, valid]
+        valid_window = window[:, valid]
+        count_less = np.sum(valid_window < last, axis=0)
+        count_equal = np.sum(valid_window == last, axis=0)
+        out[row, valid] = (count_less + (count_equal + 1.0) / 2.0) / d
     return out
 
 

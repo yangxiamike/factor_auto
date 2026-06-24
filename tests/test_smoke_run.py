@@ -1,9 +1,24 @@
 import json
+from pathlib import Path
 
 from conftest import write_test_config_files
 from typer.testing import CliRunner
 
 from factor_autoresearch.cli import app
+
+
+def _assert_run_outputs(run_dir: Path) -> None:
+    assert (run_dir / "summary.md").exists()
+    assert (run_dir / "manifest.json").exists()
+    assert (run_dir / "logs" / "evaluate.log").exists()
+    assert {
+        path.name for path in (run_dir / "results").iterdir() if path.is_file()
+    } == {
+        "candidate_results.jsonl",
+        "metrics.parquet",
+        "ic_series.parquet",
+        "diagnostics.parquet",
+    }
 
 
 def test_smoke_validate_evaluate_clean(sample_dataset_dir, tmp_path) -> None:
@@ -63,6 +78,7 @@ def test_smoke_validate_evaluate_clean(sample_dataset_dir, tmp_path) -> None:
         ],
     )
     assert evaluate.exit_code == 0
+    _assert_run_outputs(tmp_path / "runs" / "smoke_001")
 
     clean = runner.invoke(
         app,
@@ -126,3 +142,4 @@ def test_smoke_evaluate_v1_engine(sample_dataset_dir, tmp_path) -> None:
         ],
     )
     assert evaluate.exit_code == 0
+    _assert_run_outputs(tmp_path / "runs" / "smoke_v1")

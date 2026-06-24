@@ -44,10 +44,12 @@ def test_artifact_writer_prepares_and_writes_run_outputs(test_config, tmp_path) 
     results = [{"id": "fa_demo", "status": "candidate_pass"}]
     metrics_frame = pd.DataFrame([{"candidate_id": "fa_demo", "horizon": "1d", "rankic_mean": 0.2}])
     ic_series_frame = pd.DataFrame([{"candidate_id": "fa_demo", "trade_date": "2024-01-02", "horizon": "1d"}])
-    paths = writer.write_results(results, metrics_frame, ic_series_frame)
+    diagnostics_frame = pd.DataFrame([{"candidate_id": "fa_demo", "horizon": "1d", "warning_count": 0}])
+    paths = writer.write_results(results, metrics_frame, ic_series_frame, diagnostics_frame)
     assert paths["results"].exists()
     assert paths["metrics"].exists()
     assert paths["ic_series"].exists()
+    assert paths["diagnostics"].exists()
     assert json.loads(paths["results"].read_text(encoding="utf-8").strip())["id"] == "fa_demo"
 
     summary_path = writer.write_summary("# summary\n")

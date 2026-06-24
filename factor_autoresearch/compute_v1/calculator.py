@@ -45,13 +45,25 @@ class V1FactorCalc:
     def complexity_score(self, candidate: Candidate) -> int:
         return self.validate_candidate(candidate).complexity_score
 
-    def calculate(self, candidate: Candidate, dataset: DatasetBundle) -> pd.Series:
+    def calculate_matrix(
+        self,
+        candidate: Candidate,
+        dataset: DatasetBundle,
+        panel: PanelStore | None = None,
+    ) -> np.ndarray:
+        """Evaluate a candidate directly to a dense matrix."""
+
         self.validator.validate_candidate(candidate)
         tree = self.validator.parse(candidate.expression)
-        panel = PanelStore.from_dataset(dataset)
-        values = self._evaluate(tree.body, panel)
+        panel_store = panel or PanelStore.from_dataset(dataset)
+        values = self._evaluate(tree.body, panel_store)
         values = np.asarray(values, dtype=float)
         values[~np.isfinite(values)] = np.nan
+        return values
+
+    def calculate(self, candidate: Candidate, dataset: DatasetBundle) -> pd.Series:
+        panel = PanelStore.from_dataset(dataset)
+        values = self.calculate_matrix(candidate, dataset, panel)
         return panel.to_series(candidate.candidate_id, values).reindex(dataset.panel.index)
 
     def _evaluate(self, node: ast.AST, panel: PanelStore) -> np.ndarray:
