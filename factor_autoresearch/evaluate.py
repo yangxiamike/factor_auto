@@ -17,9 +17,11 @@ from factor_autoresearch import __version__
 from factor_autoresearch.artifacts import ArtifactWriter
 from factor_autoresearch.calculator import ExpressionValidationError, FactorCalc
 from factor_autoresearch.candidates import Candidate, load_candidate_batch
+from factor_autoresearch.compute_v1.calculator import V1FactorCalc
 from factor_autoresearch.config import ExperimentConfig
 from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.data_loader import DataLoader, DatasetBundle
+from factor_autoresearch.engine.parallel import run_ordered
 from factor_autoresearch.gate import GateDecision, apply_candidate_gate
 from factor_autoresearch.logging_config import configure_logging
 from factor_autoresearch.metrics import MetricsResult, compute_candidate_metrics
@@ -36,6 +38,18 @@ class EvaluationArtifacts:
 
     run_dir: Path
     results: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class CandidateEvaluation:
+    """Single-candidate output before the coordinator writes artifacts."""
+
+    candidate: Candidate
+    result: dict[str, Any]
+    metrics_result: MetricsResult | None
+    raw_factor: pd.Series | None = None
+    processed_factor: pd.Series | None = None
+    decision: GateDecision | None = None
 
 
 def _sha256_file(path: Path) -> str:
@@ -106,7 +120,7 @@ class Evaluator:
         """初始化: 准备评估上下文依赖与落盘组件。"""
 
         self.context = context
-        self.factor_calc = FactorCalc(context.config)
+        self.factor_calc = V1FactorCalc(context.config) if context.engine == "v1" else FactorCalc(context.config)
         self.loader = DataLoader(config=context.config, dataset_path=context.dataset_path)
         self.registry = RegistryWriter(context.registry_path)
         self.artifacts = ArtifactWriter(context)
@@ -134,16 +148,8 @@ class Evaluator:
         metric_frames: list[pd.DataFrame] = []
         ic_frames: list[pd.DataFrame] = []
 
-        for candidate in candidates:
-            LOGGER.info(
-                "evaluating candidate",
-                extra={
-                    "run_id": self.context.run_id,
-                    "candidate_id": candidate.candidate_id,
-                    "stage": "candidate",
-                },
-            )
-            result, metrics_result = self.evaluate_candidate(candidate, dataset)
+        for evaluation in self._evaluate_candidates(candidates, dataset):
+            result, metrics_result = self._commit_candidate_evaluation(evaluation)
             results.append(result)
             self._append_metrics_frames(metrics_result, metric_frames, ic_frames)
 
@@ -155,24 +161,65 @@ class Evaluator:
         )
         return EvaluationArtifacts(run_dir=self.context.run_dir, results=results)
 
-    def evaluate_candidate(
+    def _evaluate_candidates(
+        self,
+        candidates: list[Candidate],
+        dataset: DatasetBundle,
+    ) -> list[CandidateEvaluation]:
+        """Evaluate candidates serially or with ordered candidate-level parallelism."""
+
+        if self.context.engine == "legacy":
+            return [self._evaluate_candidate_core(candidate, dataset) for candidate in candidates]
+
+        jobs = int(self.context.jobs) if self.context.jobs != "auto" else "auto"
+        ordered = run_ordered(candidates, lambda candidate: self._evaluate_candidate_core(candidate, dataset), jobs)
+        evaluations: list[CandidateEvaluation] = []
+        for item in ordered:
+            if item.ok:
+                evaluations.append(item.value)
+                continue
+            candidate = item.item
+            evaluations.append(
+                CandidateEvaluation(
+                    candidate=candidate,
+                    result={
+                        "id": candidate.candidate_id,
+                        "status": "error",
+                        "failure_bucket": "runtime_error",
+                        "details": {"message": str(item.error)},
+                    },
+                    metrics_result=None,
+                )
+            )
+        return evaluations
+
+    def _evaluate_candidate_core(
         self,
         candidate: Candidate,
         dataset: DatasetBundle,
-    ) -> tuple[dict[str, Any], MetricsResult | None]:
-        """单因子评估: 返回候选评估结果，并隔离运行时异常。"""
+    ) -> CandidateEvaluation:
+        """Compute one candidate without writing artifacts or registry records."""
 
+        LOGGER.info(
+            "evaluating candidate",
+            extra={
+                "run_id": self.context.run_id,
+                "candidate_id": candidate.candidate_id,
+                "stage": "candidate",
+            },
+        )
         try:
             metadata = self.factor_calc.validate_candidate(candidate)
         except ExpressionValidationError as exc:
-            return (
-                {
+            return CandidateEvaluation(
+                candidate=candidate,
+                result={
                     "id": candidate.candidate_id,
                     "status": "invalid",
                     "failure_bucket": "validate_failed",
                     "details": {"message": str(exc)},
                 },
-                None,
+                metrics_result=None,
             )
 
         try:
@@ -186,20 +233,14 @@ class Evaluator:
                 complexity_score=metadata.complexity_score,
             )
             decision = apply_candidate_gate(candidate, metrics_result, self.context.config)
-            factor_values_path = self.artifacts.write_factor_values(
-                candidate.candidate_id,
-                raw_factor,
-                processed_factor,
+            return CandidateEvaluation(
+                candidate=candidate,
+                result=self._result_from_decision(candidate, decision, metrics_result),
+                metrics_result=metrics_result,
+                raw_factor=raw_factor,
+                processed_factor=processed_factor,
+                decision=decision,
             )
-            if decision.passed:
-                self.registry.append_passed(
-                    candidate=candidate,
-                    decision=decision,
-                    metrics_result=metrics_result,
-                    context=self.context,
-                    factor_values_path=factor_values_path,
-                )
-            return self._result_from_decision(candidate, decision, metrics_result), metrics_result
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception(
                 "candidate runtime error",
@@ -209,15 +250,54 @@ class Evaluator:
                     "stage": "candidate",
                 },
             )
-            return (
-                {
+            return CandidateEvaluation(
+                candidate=candidate,
+                result={
                     "id": candidate.candidate_id,
                     "status": "error",
                     "failure_bucket": "runtime_error",
                     "details": {"message": str(exc)},
                 },
-                None,
+                metrics_result=None,
             )
+
+    def _commit_candidate_evaluation(
+        self,
+        evaluation: CandidateEvaluation,
+    ) -> tuple[dict[str, Any], MetricsResult | None]:
+        """Return a computed candidate result after coordinator-side artifact work."""
+
+        if (
+            evaluation.metrics_result is None
+            or evaluation.raw_factor is None
+            or evaluation.processed_factor is None
+            or evaluation.decision is None
+        ):
+            return evaluation.result, evaluation.metrics_result
+
+        factor_values_path = self.artifacts.write_factor_values(
+            evaluation.candidate.candidate_id,
+            evaluation.raw_factor,
+            evaluation.processed_factor,
+        )
+        if evaluation.decision.passed:
+            self.registry.append_passed(
+                candidate=evaluation.candidate,
+                decision=evaluation.decision,
+                metrics_result=evaluation.metrics_result,
+                context=self.context,
+                factor_values_path=factor_values_path,
+            )
+        return evaluation.result, evaluation.metrics_result
+
+    def evaluate_candidate(
+        self,
+        candidate: Candidate,
+        dataset: DatasetBundle,
+    ) -> tuple[dict[str, Any], MetricsResult | None]:
+        """单因子评估: 返回候选评估结果，并隔离运行时异常。"""
+
+        return self._commit_candidate_evaluation(self._evaluate_candidate_core(candidate, dataset))
 
     def _build_run_manifest(self, candidate_count: int, dataset_manifest: dict[str, Any]) -> dict[str, Any]:
         """运行清单: 组装本次评估批次的 manifest 内容。"""
@@ -230,6 +310,8 @@ class Evaluator:
             "candidate_file_hash": _sha256_file(self.context.candidates_path),
             "gate_version": self.context.config.gate.version,
             "tool_version": __version__,
+            "engine": self.context.engine,
+            "jobs": self.context.jobs,
             "candidate_count": candidate_count,
             "dataset_manifest": dataset_manifest,
             "preprocess": {

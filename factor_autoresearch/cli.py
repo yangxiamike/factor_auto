@@ -91,6 +91,8 @@ def factor_evaluate(
     config: Annotated[Path, typer.Option(exists=True)] = DEFAULT_CONFIG,
     registry: Annotated[Path, typer.Option()] = Path("candidate_factors/registry.jsonl"),
     runs_dir: Annotated[Path, typer.Option()] = Path("runs"),
+    engine: Annotated[str, typer.Option()] = "legacy",
+    jobs: Annotated[str, typer.Option()] = "auto",
     verbose: Annotated[bool, typer.Option("--verbose")] = False,
     quiet: Annotated[bool, typer.Option("--quiet")] = False,
 ) -> None:
@@ -103,6 +105,8 @@ def factor_evaluate(
         registry_path=registry,
         runs_dir=runs_dir,
         run_id=run_id,
+        engine=engine,
+        jobs=jobs,
         verbose=verbose,
         quiet=quiet,
     )

@@ -8,3 +8,11 @@ def test_cli_help() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "dataset" in result.stdout
+
+
+def test_cli_evaluate_exposes_engine_and_jobs_options() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["factor", "evaluate", "--help"])
+    assert result.exit_code == 0
+    assert "--engine" in result.stdout
+    assert "--jobs" in result.stdout
