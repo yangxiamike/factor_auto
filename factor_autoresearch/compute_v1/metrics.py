@@ -2,23 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 import pandas as pd
 
+from factor_autoresearch.compute_v1.metrics_kernels import resolve_metrics_backend
 from factor_autoresearch.compute_v1.panel import PanelStore
 from factor_autoresearch.config import ExperimentConfig
 from factor_autoresearch.data_loader import DatasetBundle
 from factor_autoresearch.metrics import MetricsResult
-
-
-@dataclass(frozen=True)
-class _QuantileDayStats:
-    long_short_return: float
-    monotonicity: float
-    bucket_count: int
-    quantile_returns: dict[int, float]
 
 
 def _series_to_matrix(series: pd.Series, store: PanelStore) -> np.ndarray:
@@ -37,83 +28,6 @@ def _frame_to_cube(
         for column in columns
     ]
     return np.stack(arrays, axis=0)
-
-
-def _rowwise_corr(x: np.ndarray, y: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
-    out = np.full(x.shape[0], np.nan, dtype=float)
-    for row in range(x.shape[0]):
-        mask = valid_mask[row]
-        if int(mask.sum()) < 2:
-            continue
-        corr = np.corrcoef(x[row, mask], y[row, mask])[0, 1]
-        if np.isfinite(corr):
-            out[row] = float(corr)
-    return out
-
-
-def _rowwise_spearman(x: np.ndarray, y: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
-    x_rank = (
-        pd.DataFrame(np.where(valid_mask, x, np.nan))
-        .rank(axis=1, method="average", na_option="keep")
-        .to_numpy(dtype=float)
-    )
-    y_rank = (
-        pd.DataFrame(np.where(valid_mask, y, np.nan))
-        .rank(axis=1, method="average", na_option="keep")
-        .to_numpy(dtype=float)
-    )
-    return _rowwise_corr(x_rank, y_rank, valid_mask)
-
-
-def _stable_quantile_stats(
-    factor_values: np.ndarray,
-    return_values: np.ndarray,
-    valid_mask: np.ndarray,
-    quantiles: int,
-) -> _QuantileDayStats:
-    valid_indices = np.flatnonzero(valid_mask)
-    if valid_indices.size < quantiles:
-        return _QuantileDayStats(
-            long_short_return=np.nan,
-            monotonicity=np.nan,
-            bucket_count=0,
-            quantile_returns={},
-        )
-
-    ordered = valid_indices[np.argsort(factor_values[valid_indices], kind="mergesort")]
-    ranks = np.arange(1, ordered.size + 1, dtype=float)
-    edges = 1.0 + (ordered.size - 1.0) * np.arange(1, quantiles, dtype=float) / quantiles
-    labels = np.searchsorted(edges, ranks, side="left") + 1
-
-    bucket_returns: dict[int, float] = {}
-    for bucket in range(1, quantiles + 1):
-        bucket_assets = ordered[labels == bucket]
-        if bucket_assets.size == 0:
-            continue
-        bucket_returns[bucket] = float(np.nanmean(return_values[bucket_assets]))
-
-    bucket_count = len(bucket_returns)
-    if bucket_count < 2:
-        long_short_return = np.nan
-        monotonicity = np.nan
-    else:
-        ordered_returns = pd.Series([bucket_returns[bucket] for bucket in sorted(bucket_returns)], dtype=float)
-        long_short_return = float(ordered_returns.iloc[-1] - ordered_returns.iloc[0])
-        monotonicity = float(
-            pd.Series(range(1, bucket_count + 1), dtype=float).corr(
-                ordered_returns,
-                method="spearman",
-            )
-        )
-
-    return _QuantileDayStats(
-        long_short_return=long_short_return,
-        monotonicity=monotonicity,
-        bucket_count=bucket_count,
-        quantile_returns=bucket_returns,
-    )
-
-
 def _nanmean_or_nan(values: np.ndarray | pd.Series) -> float:
     array = np.asarray(values, dtype=float)
     if array.size == 0 or np.isnan(array).all():
@@ -141,15 +55,17 @@ def compute_candidate_metrics_from_matrix(
     returns_cube: np.ndarray,
     config: ExperimentConfig,
     complexity_score: int,
+    backend: str = "auto",
 ) -> MetricsResult:
     """Compute metrics using already-prepared dense matrices."""
 
+    backend_impl = resolve_metrics_backend(backend)
     universe_mask = panel_store.universe_mask
     universe_count = universe_mask.sum(axis=1).astype(int)
     factor_valid = np.isfinite(factor_matrix)
 
     horizon_summary_rows: list[dict[str, object]] = []
-    ic_series_rows: list[dict[str, object]] = []
+    ic_frames: list[pd.DataFrame] = []
 
     for horizon_index, horizon in enumerate(config.horizons):
         return_matrix = returns_cube[horizon_index]
@@ -162,49 +78,34 @@ def compute_candidate_metrics_from_matrix(
             out=np.full(valid_count.shape, np.nan, dtype=float),
             where=universe_count > 0,
         )
-        ic = _rowwise_corr(factor_matrix, return_matrix, valid_mask)
-        rankic = _rowwise_spearman(factor_matrix, return_matrix, valid_mask)
+        ic = backend_impl.rowwise_corr(factor_matrix, return_matrix, valid_mask)
+        rankic = backend_impl.rowwise_spearman(factor_matrix, return_matrix, valid_mask)
         ic[valid_count < config.gate.min_cross_section_size] = np.nan
         rankic[valid_count < config.gate.min_cross_section_size] = np.nan
 
-        long_short = np.full(len(panel_store.date_index), np.nan, dtype=float)
-        monotonicity = np.full(len(panel_store.date_index), np.nan, dtype=float)
-        bucket_count = np.zeros(len(panel_store.date_index), dtype=int)
-        quantile_returns_by_bucket: dict[int, list[float]] = {
-            bucket: [] for bucket in range(1, config.gate.quantiles + 1)
-        }
+        long_short, monotonicity, bucket_count, quantile_returns = backend_impl.quantile_stats(
+            factor_matrix,
+            return_matrix,
+            valid_mask,
+            config.gate.quantiles,
+        )
 
-        for day_index, trade_date in enumerate(panel_store.date_index):
-            day_quantiles = _stable_quantile_stats(
-                factor_matrix[day_index],
-                return_matrix[day_index],
-                valid_mask[day_index],
-                config.gate.quantiles,
-            )
-            long_short[day_index] = day_quantiles.long_short_return
-            monotonicity[day_index] = day_quantiles.monotonicity
-            bucket_count[day_index] = day_quantiles.bucket_count
-            for bucket, bucket_return in day_quantiles.quantile_returns.items():
-                quantile_returns_by_bucket[bucket].append(bucket_return)
-
-            ic_series_rows.append(
+        ic_frames.append(
+            pd.DataFrame(
                 {
                     "candidate_id": candidate_id,
-                    "trade_date": trade_date,
+                    "trade_date": panel_store.date_index,
                     "horizon": horizon,
-                    "coverage": float(coverage[day_index]),
-                    "valid_count": int(valid_count[day_index]),
-                    "ic": float(ic[day_index]) if np.isfinite(ic[day_index]) else np.nan,
-                    "rankic": float(rankic[day_index]) if np.isfinite(rankic[day_index]) else np.nan,
-                    "long_short_return": float(long_short[day_index])
-                    if np.isfinite(long_short[day_index])
-                    else np.nan,
-                    "monotonicity": float(monotonicity[day_index])
-                    if np.isfinite(monotonicity[day_index])
-                    else np.nan,
-                    "bucket_count": int(bucket_count[day_index]),
+                    "coverage": coverage.astype(float),
+                    "valid_count": valid_count.astype(int),
+                    "ic": ic.astype(float),
+                    "rankic": rankic.astype(float),
+                    "long_short_return": long_short.astype(float),
+                    "monotonicity": monotonicity.astype(float),
+                    "bucket_count": bucket_count.astype(int),
                 }
             )
+        )
 
         ic_mean = _nanmean_or_nan(ic)
         rankic_mean = _nanmean_or_nan(rankic)
@@ -222,9 +123,9 @@ def compute_candidate_metrics_from_matrix(
         effective_trade_days = int(np.isfinite(ic).sum())
 
         quantile_summary = {
-            f"quantile_return_q{bucket}_{horizon}": _nanmean_or_nan(bucket_returns)
-            for bucket, bucket_returns in quantile_returns_by_bucket.items()
-            if bucket_returns
+            f"quantile_return_q{bucket + 1}_{horizon}": _nanmean_or_nan(quantile_returns[:, bucket])
+            for bucket in range(config.gate.quantiles)
+            if np.isfinite(quantile_returns[:, bucket]).any()
         }
 
         horizon_summary_rows.append(
@@ -256,7 +157,7 @@ def compute_candidate_metrics_from_matrix(
     }
     return MetricsResult(
         horizon_rows=horizon_rows,
-        ic_series=pd.DataFrame(ic_series_rows),
+        ic_series=pd.concat(ic_frames, ignore_index=True) if ic_frames else pd.DataFrame(),
         aggregate=aggregate,
     )
 
@@ -268,6 +169,7 @@ def compute_candidate_metrics(
     dataset: DatasetBundle,
     config: ExperimentConfig,
     complexity_score: int,
+    backend: str = "auto",
 ) -> MetricsResult:
     """Compute daily and aggregate metrics for all configured horizons in one pass."""
 
@@ -280,4 +182,5 @@ def compute_candidate_metrics(
         returns_cube=returns_cube,
         config=config,
         complexity_score=complexity_score,
+        backend=backend,
     )
