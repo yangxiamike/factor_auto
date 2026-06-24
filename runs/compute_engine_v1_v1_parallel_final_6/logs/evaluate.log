@@ -1,0 +1,2 @@
+2026-06-24 13:44:07,522 INFO factor_autoresearch.evaluate run=compute_engine_v1_v1_parallel_final_6 candidate=- stage=batch starting evaluation batch
+2026-06-24 13:44:35,611 INFO factor_autoresearch.evaluate run=compute_engine_v1_v1_parallel_final_6 candidate=- stage=batch evaluation batch completed
