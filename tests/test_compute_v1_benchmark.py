@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from factor_autoresearch.compute_v1.benchmark import BenchmarkComparison, BenchmarkResult, BenchmarkTimer, compare_legacy_vs_v1
+from factor_autoresearch.compute_v1.benchmark import (
+    BenchmarkComparison,
+    BenchmarkResult,
+    BenchmarkTimer,
+    EvaluationBenchmark,
+    compare_legacy_vs_v1,
+)
 
 
 def _fake_clock(*values: float):
@@ -72,3 +78,33 @@ def test_comparison_markdown_render_is_compact() -> None:
             "- faster: v1",
         ]
     )
+
+
+def test_evaluation_benchmark_serializes_run_summary() -> None:
+    summary = EvaluationBenchmark(
+        engine="v1",
+        jobs=4,
+        candidate_count=12,
+        trade_days=30,
+        panel_rows=1200,
+        universe_daily_mean=40.0,
+        total_seconds=3.4567891,
+        calculate_seconds=1.1,
+        preprocess_seconds=0.9,
+        metrics_seconds=1.2,
+        artifact_seconds=0.2,
+    )
+
+    assert summary.to_dict() == {
+        "engine": "v1",
+        "jobs": 4,
+        "candidate_count": 12,
+        "trade_days": 30,
+        "panel_rows": 1200,
+        "universe_daily_mean": 40.0,
+        "total_seconds": 3.456789,
+        "calculate_seconds": 1.1,
+        "preprocess_seconds": 0.9,
+        "metrics_seconds": 1.2,
+        "artifact_seconds": 0.2,
+    }

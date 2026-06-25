@@ -73,6 +73,38 @@ def timed_call(
 
 
 @dataclass(slots=True)
+class EvaluationBenchmark:
+    """Serialized batch benchmark written beside run artifacts."""
+
+    engine: str
+    jobs: str | int
+    candidate_count: int
+    trade_days: int
+    panel_rows: int
+    universe_daily_mean: float
+    total_seconds: float
+    calculate_seconds: float
+    preprocess_seconds: float
+    metrics_seconds: float
+    artifact_seconds: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "engine": self.engine,
+            "jobs": self.jobs,
+            "candidate_count": int(self.candidate_count),
+            "trade_days": int(self.trade_days),
+            "panel_rows": int(self.panel_rows),
+            "universe_daily_mean": round(float(self.universe_daily_mean), SUMMARY_PRECISION),
+            "total_seconds": round(float(self.total_seconds), SUMMARY_PRECISION),
+            "calculate_seconds": round(float(self.calculate_seconds), SUMMARY_PRECISION),
+            "preprocess_seconds": round(float(self.preprocess_seconds), SUMMARY_PRECISION),
+            "metrics_seconds": round(float(self.metrics_seconds), SUMMARY_PRECISION),
+            "artifact_seconds": round(float(self.artifact_seconds), SUMMARY_PRECISION),
+        }
+
+
+@dataclass(slots=True)
 class BenchmarkComparison:
     """A side-by-side runtime comparison between legacy and compute v1."""
 

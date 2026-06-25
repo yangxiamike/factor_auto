@@ -9,6 +9,8 @@ import logging
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from threading import Lock
+from time import perf_counter
 from typing import Any
 
 import pandas as pd
@@ -145,10 +147,18 @@ class Evaluator:
         self._v1_industry_matrix: Any = None
         self._v1_returns_cube: Any = None
         self._v1_neutralization_design: Any = None
+        self._benchmark_lock = Lock()
+        self._benchmark_timings = {
+            "calculate_seconds": 0.0,
+            "preprocess_seconds": 0.0,
+            "metrics_seconds": 0.0,
+            "artifact_seconds": 0.0,
+        }
 
     def evaluate_batch(self) -> EvaluationArtifacts:
         """批量评估: 执行整批候选因子的加载、评估、汇总与写出。"""
 
+        total_start = perf_counter()
         dataset = self.loader.load()
         self._prepare_v1_runtime(dataset)
         candidates, invalid_records = load_candidate_batch(self.context.candidates_path, self.context.config)
@@ -187,6 +197,13 @@ class Evaluator:
             ic_series_frame,
             diagnostics_frame,
             dataset.manifest,
+        )
+        self.artifacts.write_benchmark(
+            self._build_benchmark_report(
+                dataset=dataset,
+                candidate_count=len(candidates) + len(invalid_records),
+                total_start=total_start,
+            )
         )
         LOGGER.info(
             "evaluation batch completed",
@@ -264,22 +281,34 @@ class Evaluator:
 
             if self.context.engine == "v1":
                 panel_store = self._require_v1_panel_store()
+                stage_start = perf_counter()
                 raw_factor_matrix = self.factor_calc.calculate_matrix(candidate, dataset, panel_store)
+                self._add_benchmark_time("calculate_seconds", perf_counter() - stage_start)
+                stage_start = perf_counter()
                 processed_factor_matrix = self._preprocess_factor_matrix(raw_factor_matrix)
+                self._add_benchmark_time("preprocess_seconds", perf_counter() - stage_start)
+                stage_start = perf_counter()
                 metrics_result = self._compute_v1_metrics_from_matrix(
                     candidate_id=candidate.candidate_id,
                     factor_matrix=processed_factor_matrix,
                     complexity_score=metadata.complexity_score,
                 )
+                self._add_benchmark_time("metrics_seconds", perf_counter() - stage_start)
             else:
+                stage_start = perf_counter()
                 raw_factor = self.factor_calc.calculate(candidate, dataset)
+                self._add_benchmark_time("calculate_seconds", perf_counter() - stage_start)
+                stage_start = perf_counter()
                 processed_factor = self._preprocess_factor(raw_factor, dataset)
+                self._add_benchmark_time("preprocess_seconds", perf_counter() - stage_start)
+                stage_start = perf_counter()
                 metrics_result = self._compute_metrics(
                     candidate_id=candidate.candidate_id,
                     factor=processed_factor,
                     dataset=dataset,
                     complexity_score=metadata.complexity_score,
                 )
+                self._add_benchmark_time("metrics_seconds", perf_counter() - stage_start)
             decision = apply_candidate_gate(candidate, metrics_result, self.context.config)
             return CandidateEvaluation(
                 candidate=candidate,
@@ -381,6 +410,7 @@ class Evaluator:
         ):
             return evaluation.result, evaluation.metrics_result
 
+        stage_start = perf_counter()
         factor_values_path = self.artifacts.write_factor_values(
             evaluation.candidate.candidate_id,
             evaluation.raw_factor,
@@ -394,6 +424,7 @@ class Evaluator:
                 context=self.context,
                 factor_values_path=factor_values_path,
             )
+        self._add_benchmark_time("artifact_seconds", perf_counter() - stage_start)
         return evaluation.result, evaluation.metrics_result
 
     def evaluate_candidate(
@@ -507,11 +538,7 @@ class Evaluator:
 
         metrics_frame = pd.concat(metric_frames, ignore_index=True) if metric_frames else pd.DataFrame()
         ic_series_frame = pd.concat(ic_frames, ignore_index=True) if ic_frames else pd.DataFrame()
-        diagnostics_frame = (
-            pd.concat(diagnostics_frames, ignore_index=True, sort=False)
-            if diagnostics_frames
-            else pd.DataFrame()
-        )
+        diagnostics_frame = pd.concat(diagnostics_frames, ignore_index=True, sort=False) if diagnostics_frames else pd.DataFrame()
         return metrics_frame, ic_series_frame, diagnostics_frame
 
     def _build_v1_diagnostics_frame(self, metrics_result: MetricsResult) -> pd.DataFrame:
@@ -544,9 +571,11 @@ class Evaluator:
     ) -> None:
         """批量结果写出: 统一写出结果明细与 summary 文本。"""
 
+        stage_start = perf_counter()
         self.artifacts.write_results(results, metrics_frame, ic_series_frame, diagnostics_frame)
         summary_text = self._render_summary(results, metrics_frame, dataset_manifest)
         self.artifacts.write_summary(summary_text)
+        self._add_benchmark_time("artifact_seconds", perf_counter() - stage_start)
 
     def _preprocess_factor_matrix(self, raw_factor_matrix: Any) -> Any:
         """Run the v1 preprocess path on a dense factor matrix."""
@@ -589,6 +618,103 @@ class Evaluator:
         raw_factor = panel_store.to_series(candidate_id, raw_factor_matrix)
         processed_factor = panel_store.to_series(candidate_id, processed_factor_matrix)
         return raw_factor, processed_factor
+
+    def _add_benchmark_time(self, key: str, seconds: float) -> None:
+        """Accumulate one benchmark stage measurement."""
+
+        with self._benchmark_lock:
+            self._benchmark_timings[key] = self._benchmark_timings.get(key, 0.0) + max(seconds, 0.0)
+
+    def _build_benchmark_report(
+        self,
+        *,
+        dataset: DatasetBundle,
+        candidate_count: int,
+        total_start: float,
+    ) -> dict[str, Any]:
+        """Build the run-level benchmark report."""
+
+        in_universe = dataset.panel["in_universe"].fillna(False)
+        universe_counts = in_universe.groupby(level="trade_date", sort=False).sum()
+        timings = {key: round(value, 6) for key, value in self._benchmark_timings.items()}
+        total_seconds = max(perf_counter() - total_start, 0.0)
+        trade_days = int(dataset.panel.index.get_level_values("trade_date").nunique())
+        projection = self._build_benchmark_projection(
+            total_seconds=total_seconds,
+            candidate_count=candidate_count,
+            trade_days=trade_days,
+        )
+        return {
+            "engine": self.context.engine,
+            "jobs": self.context.jobs,
+            "dataset_id": dataset.manifest.get("dataset_id"),
+            "universe": dataset.manifest.get("universe"),
+            "date_start": dataset.manifest.get("date_start"),
+            "date_end": dataset.manifest.get("date_end"),
+            "source_universe_key": dataset.manifest.get("source_universe_key"),
+            "forward_return_definition": dataset.manifest.get("forward_return_definition"),
+            "universe_filter": dataset.manifest.get("universe_filter", {}),
+            "candidate_count": int(candidate_count),
+            "trade_days": trade_days,
+            "panel_rows": int(len(dataset.panel)),
+            "universe_daily_mean": round(float(universe_counts.mean()), 6) if not universe_counts.empty else 0.0,
+            "total_seconds": round(total_seconds, 6),
+            **timings,
+            **projection,
+        }
+
+    def _build_benchmark_projection(
+        self,
+        *,
+        total_seconds: float,
+        candidate_count: int,
+        trade_days: int,
+    ) -> dict[str, Any]:
+        """Project current benchmark to the target mainboard production workload."""
+
+        safe_candidates = max(int(candidate_count), 1)
+        safe_trade_days = max(int(trade_days), 1)
+        seconds_per_candidate = total_seconds / safe_candidates
+        seconds_per_candidate_day = total_seconds / (safe_candidates * safe_trade_days)
+
+        def projected_seconds(years: int, candidates: int) -> float:
+            return seconds_per_candidate_day * 252 * years * candidates
+
+        projected_8y_20c = projected_seconds(8, 20)
+        projected_8y_30c = projected_seconds(8, 30)
+        projected_10y_20c = projected_seconds(10, 20)
+        projected_10y_30c = projected_seconds(10, 30)
+        classification = self._classify_benchmark(projected_10y_30c)
+        stage_seconds = {
+            key: value
+            for key, value in self._benchmark_timings.items()
+            if key.endswith("_seconds")
+        }
+        top_stage = max(stage_seconds, key=stage_seconds.get) if stage_seconds else None
+        return {
+            "seconds_per_candidate": round(seconds_per_candidate, 6),
+            "seconds_per_candidate_day": round(seconds_per_candidate_day, 9),
+            "projected_seconds_8y_20c": round(projected_8y_20c, 6),
+            "projected_seconds_8y_30c": round(projected_8y_30c, 6),
+            "projected_seconds_10y_20c": round(projected_10y_20c, 6),
+            "projected_seconds_10y_30c": round(projected_10y_30c, 6),
+            "target_seconds_10y_30c": 300.0,
+            "classification": classification,
+            "top_bottleneck_stage": top_stage,
+            "should_trigger_optimization_loop": classification != "strong_green",
+        }
+
+    @staticmethod
+    def _classify_benchmark(projected_seconds_10y_30c: float) -> str:
+        """Classify the target workload projection against the CPU-only runtime gate."""
+
+        if projected_seconds_10y_30c <= 300.0:
+            return "strong_green"
+        if projected_seconds_10y_30c <= 600.0:
+            return "green"
+        if projected_seconds_10y_30c <= 1200.0:
+            return "yellow"
+        return "red"
 
     def _render_summary(
         self,
