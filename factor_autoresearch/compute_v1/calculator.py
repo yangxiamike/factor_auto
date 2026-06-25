@@ -1,4 +1,8 @@
-"""Matrix-backed factor calculator for compute engine v1."""
+"""
+Compute v1 因子计算模块
+负责把已有 DSL 表达式直接计算成 date x asset 矩阵。
+不负责指标统计、预处理和落盘。
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ from factor_autoresearch.data_loader import DatasetBundle
 from factor_autoresearch.expression import ExpressionMetadata, ExpressionValidationError, ExpressionValidator
 from factor_autoresearch.operators import OPERATOR_REGISTRY, OperatorSpec
 
+# ============== AST 映射 ==============
 _BINARY_OPERATOR_NAMES: dict[type[ast.operator], str] = {
     ast.Add: "add",
     ast.Sub: "sub",
@@ -25,8 +30,9 @@ _BINARY_OPERATOR_NAMES: dict[type[ast.operator], str] = {
 }
 
 
+# ============== 矩阵计算器 ==============
 class V1FactorCalc:
-    """Evaluate the existing DSL through PanelStore matrices."""
+    """矩阵计算器: 通过 PanelStore 执行候选 DSL。"""
 
     def __init__(
         self,
@@ -40,9 +46,13 @@ class V1FactorCalc:
         self.cache = cache or ExpressionCache()
 
     def validate_candidate(self, candidate: Candidate) -> ExpressionMetadata:
+        """表达式校验: 复用 legacy 的 DSL 校验合同。"""
+
         return self.validator.validate_candidate(candidate)
 
     def complexity_score(self, candidate: Candidate) -> int:
+        """复杂度评分: 返回候选表达式复杂度。"""
+
         return self.validate_candidate(candidate).complexity_score
 
     def calculate_matrix(
@@ -51,7 +61,7 @@ class V1FactorCalc:
         dataset: DatasetBundle,
         panel: PanelStore | None = None,
     ) -> np.ndarray:
-        """Evaluate a candidate directly to a dense matrix."""
+        """矩阵计算: 直接产出 date x asset 原始因子矩阵。"""
 
         self.validator.validate_candidate(candidate)
         tree = self.validator.parse(candidate.expression)
@@ -62,11 +72,15 @@ class V1FactorCalc:
         return values
 
     def calculate(self, candidate: Candidate, dataset: DatasetBundle) -> pd.Series:
+        """兼容计算: 把矩阵结果转回 legacy 长表 Series。"""
+
         panel = PanelStore.from_dataset(dataset)
         values = self.calculate_matrix(candidate, dataset, panel)
         return panel.to_series(candidate.candidate_id, values).reindex(dataset.panel.index)
 
     def _evaluate(self, node: ast.AST, panel: PanelStore) -> np.ndarray:
+        """缓存执行: 对表达式子树结果做批内复用。"""
+
         key = expression_key(node)
         cached = self.cache.get(key)
         if cached is not None:
@@ -76,6 +90,8 @@ class V1FactorCalc:
         return self.cache.put(key, value)
 
     def _evaluate_uncached(self, node: ast.AST, panel: PanelStore) -> np.ndarray:
+        """递归执行: 按 AST 节点类型分派矩阵算子。"""
+
         if isinstance(node, ast.Name):
             return panel.field(node.id)
         if isinstance(node, ast.Constant):

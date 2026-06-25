@@ -1,3 +1,8 @@
+"""
+compute engine 并发测试: 验证 jobs 解析、稳定排序和异常保留。
+这些测试只覆盖调度语义，不触碰具体因子计算。
+"""
+
 import time
 
 import pytest
@@ -6,6 +11,7 @@ from factor_autoresearch.engine.parallel import parse_jobs, run_ordered
 from factor_autoresearch.engine.routing import get_engine_module, normalize_engine_name, validate_engine_name
 
 
+# ============== jobs 解析 ==============
 def test_parse_jobs_auto_caps_to_candidate_count(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("factor_autoresearch.engine.parallel.os.cpu_count", lambda: 8)
     assert parse_jobs("auto", candidate_count=3) == 1
@@ -27,6 +33,7 @@ def test_parse_jobs_rejects_invalid_values(jobs: object) -> None:
         parse_jobs(jobs=jobs, candidate_count=3)  # type: ignore[arg-type]
 
 
+# ============== 有序执行 ==============
 def test_run_ordered_preserves_input_order_with_parallel_completion() -> None:
     items = [0, 1, 2, 3]
 
@@ -63,6 +70,7 @@ def test_run_ordered_keeps_exception_in_original_slot() -> None:
     assert results[2].error is None
 
 
+# ============== 引擎路由 ==============
 def test_validate_engine_name_accepts_supported_values() -> None:
     assert validate_engine_name("legacy") == "legacy"
     assert validate_engine_name(" V1 ") == "v1"

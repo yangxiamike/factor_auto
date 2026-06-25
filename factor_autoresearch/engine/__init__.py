@@ -1,4 +1,7 @@
-"""Compute engine routing and execution helpers."""
+"""
+compute engine 包入口: 暴露引擎名称、路由和有序执行辅助。
+这里仅维护公共导出，不直接参与因子计算。
+"""
 
 from factor_autoresearch.engine.legacy import ENGINE_NAME as LEGACY_ENGINE_NAME
 from factor_autoresearch.engine.parallel import OrderedResult, parse_jobs, run_ordered

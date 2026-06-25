@@ -1,3 +1,8 @@
+"""
+compute v1 内核测试: 对比矩阵化内核和 legacy operator 的结果。
+重点验证时间序列、截面和并列排名口径，不做性能测试。
+"""
+
 import numpy as np
 import pandas as pd
 
@@ -7,10 +12,13 @@ from factor_autoresearch.data_loader import DataLoader
 from factor_autoresearch.operators import OPERATOR_REGISTRY
 
 
+# ============== 测试辅助 ==============
 def _series_from_matrix(store: PanelStore, values: np.ndarray, name: str = "x") -> pd.Series:
+    """矩阵转序列: 按 PanelStore 的索引还原为 pandas Series。"""
     return store.to_series(name, values)
 
 
+# ============== 内核等价性 ==============
 def test_compute_v1_time_series_kernels_match_legacy(sample_dataset_dir, test_config) -> None:
     dataset = DataLoader(config=test_config, dataset_path=sample_dataset_dir).load()
     store = PanelStore.from_dataset(dataset)

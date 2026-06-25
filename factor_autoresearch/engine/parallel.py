@@ -1,4 +1,7 @@
-"""Ordered parallel helpers for compute execution."""
+"""
+compute engine 并发辅助: 提供有序、可降级的候选计算执行器。
+本模块只调度任务和收集结果，不理解候选因子或指标含义。
+"""
 
 from __future__ import annotations
 
@@ -12,9 +15,10 @@ AUTO_MAX_WORKERS = 3
 AUTO_SERIAL_THRESHOLD = 32
 
 
+# ============== 并发结果结构 ==============
 @dataclass(frozen=True)
 class OrderedResult:
-    """Stable output slot for ordered parallel execution."""
+    """有序结果: 保留输入项、返回值和异常信息。"""
 
     item: Any
     value: Any = None
@@ -22,11 +26,13 @@ class OrderedResult:
 
     @property
     def ok(self) -> bool:
+        """是否成功: 没有异常时视为成功。"""
         return self.error is None
 
 
+# ============== worker 数量解析 ==============
 def parse_jobs(jobs: str | int, candidate_count: int) -> int:
-    """Normalize jobs to a usable worker count."""
+    """解析 jobs: 把配置值转成实际 worker 数量。"""
     if candidate_count < 0:
         raise ValueError("candidate_count must be >= 0.")
     if candidate_count == 0:
@@ -43,8 +49,9 @@ def parse_jobs(jobs: str | int, candidate_count: int) -> int:
     return min(jobs, candidate_count)
 
 
+# ============== 有序执行 ==============
 def run_ordered(items: list[T] | tuple[T, ...], worker: Any, jobs: str | int) -> list[OrderedResult]:
-    """Run work in parallel while returning results in input order."""
+    """有序执行: 可并发处理输入项，并按原输入顺序返回结果。"""
     sequence = list(items)
     if not sequence:
         return []
@@ -70,6 +77,7 @@ def run_ordered(items: list[T] | tuple[T, ...], worker: Any, jobs: str | int) ->
 
 
 def _run_one(item: T, worker: Any) -> OrderedResult:
+    """单项执行: 串行路径复用和并发路径一致的结果结构。"""
     try:
         return OrderedResult(item=item, value=worker(item))
     except Exception as exc:  # noqa: BLE001

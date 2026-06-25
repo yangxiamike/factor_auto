@@ -1,13 +1,18 @@
-﻿"""Runtime cost estimates for compute_v1 mining workflows."""
+﻿"""
+Compute v1 运行时间估算模块
+负责把实测 benchmark 外推到目标挖掘规模。
+不参与实际评估流程，只提供优化决策参考。
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 
+# ============== 估算结果结构 ==============
 @dataclass(frozen=True)
 class RuntimeEstimate:
-    """Projected runtime summary for a target mining workload."""
+    """运行时间估算: 保存目标规模下的耗时和分级。"""
 
     projected_seconds: float
     projected_minutes: float
@@ -15,6 +20,9 @@ class RuntimeEstimate:
     should_trigger_optimization_loop: bool
 
 
+
+
+# ============== 估算主入口 ==============
 def estimate_mining_runtime(
     *,
     baseline_seconds: float,
@@ -26,7 +34,7 @@ def estimate_mining_runtime(
     oos_multiplier: float = 1.0,
     walk_forward_windows: int = 1,
 ) -> RuntimeEstimate:
-    """Estimate full evaluation cost from a measured benchmark."""
+    """运行时间估算: 基于一次实测 benchmark 外推目标规模。"""
 
     numeric_inputs = {
         "baseline_seconds": baseline_seconds,
@@ -61,6 +69,9 @@ def estimate_mining_runtime(
     )
 
 
+
+
+# ============== 分级规则 ==============
 def _classify_runtime(projected_seconds: float) -> str:
     if projected_seconds <= 300.0:
         return "strong_green"

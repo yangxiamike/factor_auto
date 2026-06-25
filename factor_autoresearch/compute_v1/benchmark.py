@@ -1,4 +1,8 @@
-"""Lightweight benchmark helpers for compute engine comparisons."""
+"""
+Compute v1 benchmark 模块
+负责记录 legacy 与 v1 的运行耗时和对比结果。
+不参与计算逻辑，只为验收和优化决策提供证据。
+"""
 
 from __future__ import annotations
 
@@ -7,13 +11,15 @@ from dataclasses import asdict, dataclass, field
 from time import perf_counter
 from typing import Any
 
+# ============== 常量和类型 ==============
 Clock = Callable[[], float]
 SUMMARY_PRECISION = 6
 
 
+# ============== benchmark 结果 ==============
 @dataclass(slots=True)
 class BenchmarkResult:
-    """A single benchmark measurement."""
+    """单次计时: 保存一个阶段或一次调用的耗时。"""
 
     name: str
     elapsed_seconds: float
@@ -21,17 +27,22 @@ class BenchmarkResult:
 
     @property
     def elapsed_ms(self) -> float:
+        """毫秒耗时: 由秒级耗时换算。"""
+
         return self.elapsed_seconds * 1000.0
 
     def to_dict(self) -> dict[str, Any]:
+        """序列化: 输出稳定精度的 benchmark 字典。"""
+
         payload = asdict(self)
         payload["elapsed_seconds"] = round(self.elapsed_seconds, SUMMARY_PRECISION)
         payload["elapsed_ms"] = round(self.elapsed_ms, SUMMARY_PRECISION)
         return payload
 
 
+# ============== 计时工具 ==============
 class BenchmarkTimer:
-    """Context manager that records elapsed wall-clock time."""
+    """计时器: 用上下文管理器记录 wall-clock 耗时。"""
 
     def __init__(self, name: str, clock: Clock = perf_counter, metadata: dict[str, Any] | None = None) -> None:
         self.name = name
@@ -63,7 +74,7 @@ def timed_call(
     metadata: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> BenchmarkResult:
-    """Run a callable and return its timing measurement."""
+    """函数计时: 执行 callable 并返回计时结果。"""
 
     with BenchmarkTimer(name=name, clock=clock, metadata=metadata) as timer:
         func(*args, **kwargs)
@@ -72,9 +83,10 @@ def timed_call(
     return timer.result
 
 
+# ============== 评估运行 benchmark ==============
 @dataclass(slots=True)
 class EvaluationBenchmark:
-    """Serialized batch benchmark written beside run artifacts."""
+    """评估 benchmark: 写入 run 目录的批量耗时摘要。"""
 
     engine: str
     jobs: str | int
@@ -104,9 +116,10 @@ class EvaluationBenchmark:
         }
 
 
+# ============== 引擎对比 ==============
 @dataclass(slots=True)
 class BenchmarkComparison:
-    """A side-by-side runtime comparison between legacy and compute v1."""
+    """引擎对比: 保存 legacy 与 v1 的并排耗时。"""
 
     legacy: BenchmarkResult
     v1: BenchmarkResult
@@ -160,7 +173,7 @@ def compare_legacy_vs_v1(
     v1_name: str = "v1",
     metadata: dict[str, Any] | None = None,
 ) -> BenchmarkComparison:
-    """Benchmark two callables and return a compact comparison object."""
+    """引擎对比: 分别计时 legacy 与 v1 callable。"""
 
     shared_metadata = dict(metadata or {})
     legacy = timed_call(legacy_name, legacy_runner, clock=clock, metadata=shared_metadata)

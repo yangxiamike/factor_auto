@@ -1,4 +1,7 @@
-"""Routing helpers for supported compute engine names."""
+"""
+compute engine 路由: 统一解析 legacy 和 v1 的引擎名称。
+本模块只负责名称校验和模块导入，不执行具体计算。
+"""
 
 from __future__ import annotations
 
@@ -17,8 +20,9 @@ _ENGINE_MODULES: Mapping[EngineName, str] = {
 }
 
 
+# ============== 引擎名称解析 ==============
 def validate_engine_name(engine: str) -> EngineName:
-    """Validate and normalize a configured engine name."""
+    """校验引擎名: 接受 legacy / v1，并统一大小写和空白。"""
     normalized = engine.strip().lower()
     if normalized not in ENGINE_NAMES:
         supported = ", ".join(ENGINE_NAMES)
@@ -27,13 +31,14 @@ def validate_engine_name(engine: str) -> EngineName:
 
 
 def normalize_engine_name(engine: str | None, *, default: EngineName = DEFAULT_ENGINE_NAME) -> EngineName:
-    """Resolve an optional engine name to a supported value."""
+    """归一化引擎名: 空值使用默认引擎。"""
     if engine is None:
         return default
     return validate_engine_name(engine)
 
 
+# ============== 模块加载 ==============
 def get_engine_module(engine: str | None = None) -> ModuleType:
-    """Import and return the module for a supported engine name."""
+    """加载引擎模块: 返回已支持引擎对应的 Python 模块。"""
     engine_name = normalize_engine_name(engine)
     return import_module(_ENGINE_MODULES[engine_name])

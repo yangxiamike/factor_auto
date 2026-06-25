@@ -1,4 +1,8 @@
-"""Backend selection and NumPy metrics kernels for compute engine v1."""
+"""
+Compute v1 指标 kernel 模块
+提供 NumPy 默认实现，并按需接入 Numba 加速后端。
+不负责指标字段组装，只负责数组级核心计算。
+"""
 
 from __future__ import annotations
 
@@ -11,9 +15,10 @@ import numpy as np
 Array = np.ndarray
 
 
+# ============== 后端合同 ==============
 @dataclass(frozen=True)
 class MetricsBackend:
-    """Callable bundle for one metrics kernel backend."""
+    """后端合同: 封装一组可替换的指标 kernel。"""
 
     name: str
     rowwise_corr: Callable[[Array, Array, Array], Array]
@@ -21,6 +26,7 @@ class MetricsBackend:
     quantile_stats: Callable[[Array, Array, Array, int], tuple[Array, Array, Array, Array]]
 
 
+# ============== NumPy 基础函数 ==============
 def _pearson_corr_1d(x: Array, y: Array) -> float:
     if x.size < 2:
         return np.nan
@@ -50,6 +56,9 @@ def _average_rank_1d(values: Array) -> Array:
     return ranks
 
 
+
+
+# ============== NumPy 指标 kernel ==============
 def rowwise_corr_numpy(x: Array, y: Array, valid_mask: Array) -> Array:
     out = np.full(x.shape[0], np.nan, dtype=float)
     for row in range(x.shape[0]):
@@ -118,6 +127,9 @@ def quantile_stats_numpy(
     return long_short, monotonicity, bucket_count, quantile_returns
 
 
+
+
+# ============== 后端选择 ==============
 def _numpy_backend() -> MetricsBackend:
     return MetricsBackend(
         name="numpy",
@@ -135,7 +147,7 @@ def _load_numba_backend() -> MetricsBackend:
 
 
 def resolve_metrics_backend(name: str = "auto") -> MetricsBackend:
-    """Resolve the active metrics backend with optional Numba acceleration."""
+    """后端选择: auto 优先 Numba，不可用时回退 NumPy。"""
 
     if name not in {"auto", "numpy", "numba"}:
         raise ValueError("metrics backend must be one of: auto, numpy, numba")
