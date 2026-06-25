@@ -9,6 +9,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+
 def _hash_payload(payload: dict[str, Any]) -> str:
     """Return a stable sha256 hash for a configuration payload."""
 
