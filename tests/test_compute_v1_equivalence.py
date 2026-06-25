@@ -120,6 +120,75 @@ def test_compare_equivalence_fails_when_float_difference_exceeds_tolerance() -> 
     assert report.candidate_results.diffs[0].reason == "value_mismatch"
 
 
+def test_compare_equivalence_checks_non_empty_diagnostics_values() -> None:
+    results = _results()
+    metrics, ic_series = _frames()
+    legacy_diagnostics = pd.DataFrame(
+        [
+            {
+                "table_name": "daily_summary_table",
+                "candidate_id": "fa_1",
+                "horizon": "1d",
+                "coverage_mean": 0.91,
+                "ic_mean": 0.031,
+                "rankic_mean": 0.042,
+            }
+        ]
+    )
+    v1_diagnostics = legacy_diagnostics.copy()
+    v1_diagnostics.loc[0, "rankic_mean"] = 0.0424
+
+    report = compare_equivalence(
+        legacy_results=results,
+        v1_results=results,
+        legacy_metrics=metrics,
+        v1_metrics=metrics.copy(),
+        legacy_ic_series=ic_series,
+        v1_ic_series=ic_series.copy(),
+        legacy_diagnostics=legacy_diagnostics,
+        v1_diagnostics=v1_diagnostics,
+        float_tolerance=0.001,
+    )
+
+    assert report.matches is True
+    assert report.diagnostics.matches is True
+
+
+def test_compare_equivalence_fails_non_empty_diagnostics_outside_tolerance() -> None:
+    results = _results()
+    metrics, ic_series = _frames()
+    legacy_diagnostics = pd.DataFrame(
+        [
+            {
+                "table_name": "daily_summary_table",
+                "candidate_id": "fa_1",
+                "horizon": "1d",
+                "coverage_mean": 0.91,
+                "ic_mean": 0.031,
+                "rankic_mean": 0.042,
+            }
+        ]
+    )
+    v1_diagnostics = legacy_diagnostics.copy()
+    v1_diagnostics.loc[0, "rankic_mean"] = 0.052
+
+    report = compare_equivalence(
+        legacy_results=results,
+        v1_results=results,
+        legacy_metrics=metrics,
+        v1_metrics=metrics.copy(),
+        legacy_ic_series=ic_series,
+        v1_ic_series=ic_series.copy(),
+        legacy_diagnostics=legacy_diagnostics,
+        v1_diagnostics=v1_diagnostics,
+        float_tolerance=0.001,
+    )
+
+    assert report.matches is False
+    assert report.diagnostics.matches is False
+    assert report.diagnostics.diffs[0].column == "rankic_mean"
+
+
 def test_compare_equivalence_reports_schema_and_row_count_differences() -> None:
     results = _results()
     legacy_metrics, legacy_ic_series = _frames()
