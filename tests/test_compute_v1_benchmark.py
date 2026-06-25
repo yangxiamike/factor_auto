@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 
@@ -157,5 +157,5 @@ def test_benchmark_report_keeps_compute_v1_guardrail_fields(sample_dataset_dir, 
     assert report["artifact_seconds"] >= 0.0
     assert report["projected_seconds_10y_30c"] >= 0.0
     assert report["classification"] in {"strong_green", "green", "yellow", "red"}
-    assert report["classification"] in {"strong_green", "green", "yellow"}
     assert report["should_trigger_optimization_loop"] == (report["classification"] != "strong_green")
+

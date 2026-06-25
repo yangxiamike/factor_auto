@@ -254,3 +254,25 @@ uv run pytest tests/test_smoke_run.py -v
 - 自动搜索引擎。
 - 全 A 股票池。
 - official factor 晋升。
+
+## 11. Compute v1 Guardrails
+
+如果改动涉及 `compute_v1`、benchmark、diagnostics、runtime estimate 或对应测试，提交前先跑：
+
+```bash
+uv run python scripts/run_compute_v1_guardrails.py
+```
+
+这条命令会固定执行 3 组护栏测试：
+
+- `tests/test_compute_v1_benchmark.py`
+- `tests/test_compute_v1_equivalence.py`
+- `tests/test_compute_v1_runtime_estimator.py`
+
+建议执行顺序：
+
+1. 先跑 guardrails，快速看有没有 benchmark / diagnostics / runtime 口径回归。
+2. 如果改到了 `compute_v1` 核心模块，再跑 compute_v1 suite。
+3. 准备合并或发版前，再跑一次 `uv run pytest -q`。
+
+如果 guardrails 失败，先判断是字段/schema 漂移、数值口径漂移、benchmark 分类退化，还是环境波动；不要直接放宽测试或顺手改核心语义。
