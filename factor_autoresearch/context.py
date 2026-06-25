@@ -7,7 +7,6 @@ from pathlib import Path
 
 from factor_autoresearch.config import ExperimentConfig
 
-
 # ============== 运行上下文 ==============
 
 @dataclass(frozen=True)
@@ -59,3 +58,8 @@ class EvaluationContext:
     def results_dir(self) -> Path:
         """返回结果产物目录路径。"""
         return self.run_dir / "results"
+
+    @property
+    def diagnostics_path(self) -> Path:
+        """Return the diagnostics parquet path for the current run."""
+        return self.results_dir / "diagnostics.parquet"

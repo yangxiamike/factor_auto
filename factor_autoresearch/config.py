@@ -9,7 +9,6 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-
 # ============== 配置哈希 ==============
 
 def _hash_payload(payload: dict[str, Any]) -> str:
@@ -28,6 +27,11 @@ class GateConfig:
     coverage_mean_min: float
     effective_trade_days_min: int
     complexity_score_max: int
+    best_horizon_directional_ic_mean_min: float
+    best_horizon_directional_rankic_mean_min: float
+    best_horizon_directional_ic_positive_ratio_min: float
+    best_horizon_directional_rankic_positive_ratio_min: float
+    best_horizon_directional_monotonicity_min: float
     best_horizon_score_min: float
     min_cross_section_size: int
     quantiles: int
@@ -82,6 +86,7 @@ class ExperimentConfig:
     prepare: PrepareConfig
     preprocess: PreprocessConfig
     gate_config_path: Path
+    gate_config_hash: str
     config_hash: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -89,6 +94,7 @@ class ExperimentConfig:
         payload = asdict(self)
         payload["source_path"] = str(self.source_path)
         payload["gate_config_path"] = str(self.gate_config_path)
+        payload["gate_config_hash"] = self.gate_config_hash
         payload["config_hash"] = self.config_hash
         return payload
 
@@ -99,6 +105,17 @@ def _load_toml(path: Path) -> dict[str, Any]:
     """读取 TOML 文件并返回原始字典。"""
     with path.open("rb") as handle:
         return tomllib.load(handle)
+
+
+def _get_gate_threshold(
+    gate_raw: dict[str, Any],
+    new_key: str,
+    legacy_key: str,
+) -> float:
+    """Read a gate threshold with fallback to the legacy field name."""
+    if new_key in gate_raw:
+        return float(gate_raw[new_key])
+    return float(gate_raw[legacy_key])
 
 
 def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
@@ -112,15 +129,35 @@ def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
         coverage_mean_min=float(gate_raw["coverage_mean_min"]),
         effective_trade_days_min=int(gate_raw["effective_trade_days_min"]),
         complexity_score_max=int(gate_raw["complexity_score_max"]),
+        best_horizon_directional_ic_mean_min=float(
+            gate_raw["best_horizon_directional_ic_mean_min"]
+        ),
+        best_horizon_directional_rankic_mean_min=float(
+            gate_raw["best_horizon_directional_rankic_mean_min"]
+        ),
+        best_horizon_directional_ic_positive_ratio_min=_get_gate_threshold(
+            gate_raw,
+            "best_horizon_directional_ic_positive_ratio_min",
+            "best_horizon_ic_positive_ratio_min",
+        ),
+        best_horizon_directional_rankic_positive_ratio_min=_get_gate_threshold(
+            gate_raw,
+            "best_horizon_directional_rankic_positive_ratio_min",
+            "best_horizon_rankic_positive_ratio_min",
+        ),
+        best_horizon_directional_monotonicity_min=float(
+            gate_raw["best_horizon_directional_monotonicity_min"]
+        ),
         best_horizon_score_min=float(gate_raw["best_horizon_score_min"]),
         min_cross_section_size=int(gate_raw["min_cross_section_size"]),
         quantiles=int(gate_raw["quantiles"]),
         weights={key: float(value) for key, value in gate_raw["weights"].items()},
         components={key: float(value) for key, value in gate_raw["components"].items()},
     )
+    gate_payload = {"gate": gate.as_dict()}
     payload = {
         "experiment": raw,
-        "gate": {"gate": gate.as_dict()},
+        "gate": gate_payload,
     }
     return ExperimentConfig(
         experiment_id=raw["experiment_id"],
@@ -152,5 +189,6 @@ def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
             size_exposure=raw["preprocess"]["size_exposure"],
         ),
         gate_config_path=gate_path,
+        gate_config_hash=_hash_payload(gate_payload),
         config_hash=_hash_payload(payload),
     )

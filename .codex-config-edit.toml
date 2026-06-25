@@ -1,0 +1,402 @@
+approval_policy = "never"
+personality = "friendly"
+model = "gpt-5.4"
+model_reasoning_effort = "high"
+sandbox_mode = "danger-full-access"
+approvals_reviewer = "user"
+notify = [ "C:\\Users\\hp\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\1b23c930bdf84ed6\\bin\\node_modules\\@oai\\sky\\bin\\windows\\codex-computer-use.exe", "turn-ended" ]
+[projects.'C:\Users\hp']
+trust_level = "trusted"
+
+[projects.'C:\Users\hp\work']
+trust_level = "trusted"
+
+[projects.'\\?\C:\Users\hp\work\多因子交易系统']
+trust_level = "trusted"
+
+[projects.'\\?\C:\Users\hp\Documents\Playground']
+trust_level = "trusted"
+
+[projects.'\\?\C:\Users\hp\work\入境游']
+trust_level = "trusted"
+
+[projects.'C:\Users\hp\work\入境游调查']
+trust_level = "trusted"
+
+[projects.'C:\Users\hp\work\抖音文案']
+trust_level = "trusted"
+
+[projects.'C:\Users\hp\Documents\Codex\2026-04-19-computer']
+trust_level = "trusted"
+
+[projects.'C:\Users\hp\Documents\Codex\2026-04-19-new-chat']
+trust_level = "trusted"
+
+[projects.'C:\Users\hp\Documents\Codex\2026-04-19-21st-dev']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-21-stitch-mcp']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-21-tiktok']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\eastaura-web']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\eastaura web']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\tiktok-download']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\外汇因子交易']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\离子界面声控']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\windows-codex-gpt-5-5']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\gpt-5-5']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\tiktok-pov-pov-gpt5-5-image2']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\new-chat']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\gpt-gpt-25']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\gpt-25-pdf']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\10-10-gpt-25-ai-pdf']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\10-10-1996-gpt-25-ai']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\5-gpt-pdf']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\gpt-5-pdf']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\crypto-crypto-alpha101-web']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\crypto-factor-research-project']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\pv-25-iphone']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-24\plus']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\crypto-funding-rate']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-25\build-web-apps-plugin-build-web']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-25\new-chat']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\ai-factory-system']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-25\kimi-codex']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-26\ai-agent']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-26\ai']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\work\ai-marketing-system']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-26\c']
+trust_level = "trusted"
+
+[projects.'d:\work\ai-eastaura']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-27\glassdoor']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-28\new-chat']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-28\150']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-28\new-chat-2']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-28\happyhorse-api']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-28\https-www-reddit-com-r-codex']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-29\cc-connect-deepseek-codex-codex-review']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-29\deepseek-codex-codex-deepseek']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-29\deepseek-deep-codex-deepseek']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-29\deepseek-0-3-mio-token']
+trust_level = "trusted"
+
+[projects.'d:\智能体循环']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-29\speed-demon']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-04-29\harness-ai-ai-agi']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-16\goal']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-16\new-chat']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-16\new-chat-2']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-16\new-chat-3']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-16\hello']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-16\hello-2']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-16\new-chat-4']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\new-chat']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\codex-cli-codex-gui-cc-connect']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\openvpn-nordvpn']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\goal-nordvpn-vpn-telegram-vibe-coding']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\plugin-browser-openai-bundled-browse-use']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\plugin-browser-openai-bundled']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\nordvpn']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\new-chat-2']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\goal-opc-agent']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\goal-opc-agent-2']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\goal']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\goal-opc-agent-codex-hermes']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\goal-amazing']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\goal-amazing-kk-k-amazing-kk']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\maigret-github']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\maigret']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\hermes']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\一人公司opc']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\new-chat-3']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\hi']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\new-chat-4']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\new-chat-5']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-17\vpn-libcyber-clash-verge-libcyber-codex']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-18\libcyber-codex-clash-verge-vpn-codex']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-18\codex']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-18\new-chat']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-18\bitz-net-vpn-codex-cli-gui']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-18\new-chat-2']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-18\hi']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-18\new-chat-3']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-18\discord-checkding-upadte']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\appdata\local\temp\codex-feishu-rename']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-19\review']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-19\70-cpu']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-20\hermes-agent']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-20\new-chat']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-20\new-chat-2']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-05-20\new-chat-3']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\股票截面因子']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-06-02\hi-no-codex-credentials-stored-run']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\codex\2026-06-08\mcp']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\factor_autoresearch']
+trust_level = "trusted"
+
+[projects.'c:\users\hp\documents\zer0share']
+trust_level = "trusted"
+
+[windows]
+sandbox = "elevated"
+
+[sandbox_workspace_write]
+network_access = true
+
+[plugins."github@openai-curated"]
+enabled = true
+
+[plugins."vercel@openai-curated"]
+enabled = true
+
+[plugins."build-web-apps@openai-curated"]
+enabled = true
+
+[plugins."chrome@openai-bundled"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[apps.connector_76869538009648d5b282a4bb21c3d157.tools.github_create_tree]
+approval_mode = "approve"
+
+[apps.connector_76869538009648d5b282a4bb21c3d157.tools.github_create_commit]
+approval_mode = "approve"
+
+[apps.connector_76869538009648d5b282a4bb21c3d157.tools.github_update_ref]
+approval_mode = "approve"
+
+[notice]
+hide_full_access_warning = true
+
+[notice.model_migrations]
+"gpt-5.3-codex" = "gpt-5.4"
+"gpt-5.4" = "gpt-5.5"
+
+[features]
+browser_use = true
+in_app_browser = true
+js_repl = false
+guardian_approval = true
+
+[marketplaces.openai-bundled]
+last_updated = "2026-06-01T06:06:00Z"
+source_type = "local"
+source = '\\?\C:\Users\hp\.codex\.tmp\bundled-marketplaces\openai-bundled'
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4
+
+[desktop]
+conversationDetailMode = "STEPS_PROSE"
+
+[desktop.open-in-target-preferences]
+global = "vscode"
+
+[desktop.open-in-target-preferences.perPath]
+'C:\Users\hp\Documents\股票截面因子' = "vscode"
+
+[mcp_servers.node_repl]
+args = []
+command = 'C:\Users\hp\AppData\Local\OpenAI\Codex\runtimes\cua_node\1b23c930bdf84ed6\bin\node_repl.exe'
+startup_timeout_sec = 120
+
+[mcp_servers.node_repl.env]
+BROWSER_USE_AVAILABLE_BACKENDS = "chrome,iab"
+BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
+BROWSER_USE_CODEX_APP_VERSION = "26.616.81150"
+CODEX_CLI_PATH = 'C:\Users\hp\AppData\Local\OpenAI\Codex\bin\codex.exe'
+CODEX_HOME = 'C:\Users\hp\.codex'
+NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin."
+NODE_REPL_INSTRUCTIONS_USE_CASE_CHROME = "Control the Chrome browser in conjunction with the Chrome Plugin. Prefer this method of controlling Chrome over alternatives (such as Computer Use) unless the user explicitly mentions an alternative."
+NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
+NODE_REPL_NODE_MODULE_DIRS = 'C:\Users\hp\AppData\Local\OpenAI\Codex\runtimes\cua_node\1b23c930bdf84ed6\bin\node_modules'
+NODE_REPL_NODE_PATH = 'C:\Users\hp\AppData\Local\OpenAI\Codex\runtimes\cua_node\1b23c930bdf84ed6\bin\node.exe'
+NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "5504c0782b5c86b7dd08314045b9843e973a230e1be8f7e2e0ba3716fc63c55e,566be6ef352eb3de899adc56a9cd7b5e46c8f65b00e56b5630dd7a580e10cbea"
+NODE_REPL_TRUSTED_CODE_PATHS = 'C:\Users\hp\.codex'
+SKY_CUA_NATIVE_PIPE = "1"
+SKY_CUA_NATIVE_PIPE_DIRECTORY = '\\.\pipe\codex-computer-use-1a4c4922-c0e6-4acb-a9c4-d06f74b77984'

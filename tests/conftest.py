@@ -83,8 +83,14 @@ def build_test_config() -> object:
         coverage_mean_min=0.5,
         effective_trade_days_min=3,
         complexity_score_max=20,
-        best_horizon_score_min=0.1,
+        best_horizon_directional_ic_mean_min=0.0,
+        best_horizon_directional_rankic_mean_min=0.0,
+        best_horizon_directional_ic_positive_ratio_min=0.0,
+        best_horizon_directional_rankic_positive_ratio_min=0.0,
+        best_horizon_directional_monotonicity_min=-1.0,
+        best_horizon_score_min=0.0,
         min_cross_section_size=2,
+        quantiles=4,
     )
     return replace(config, gate=gate)
 
@@ -92,15 +98,20 @@ def build_test_config() -> object:
 def write_test_config_files(base_dir: Path) -> Path:
     config_dir = base_dir / "configs"
     config_dir.mkdir(parents=True, exist_ok=True)
-    gate_path = config_dir / "candidate_gate_v1.toml"
+    gate_path = config_dir / "candidate_gate_baseline_v0.toml"
     gate_path.write_text(
         "\n".join(
             [
                 "[gate]",
-                'version = "candidate_gate_v1"',
+                'version = "candidate_gate_baseline_v0"',
                 "coverage_mean_min = 0.5",
                 "effective_trade_days_min = 3",
                 "complexity_score_max = 20",
+                "best_horizon_directional_ic_mean_min = 0.0",
+                "best_horizon_directional_rankic_mean_min = 0.0",
+                "best_horizon_directional_ic_positive_ratio_min = 0.0",
+                "best_horizon_directional_rankic_positive_ratio_min = 0.0",
+                "best_horizon_directional_monotonicity_min = -1.0",
                 "best_horizon_score_min = 0.1",
                 "min_cross_section_size = 2",
                 "quantiles = 4",
@@ -147,7 +158,7 @@ def write_test_config_files(base_dir: Path) -> Path:
                 'source_universe_key = "fixture"',
                 'industry_source = "ci_l1_name"',
                 "base_filters_inherited = []",
-                'gate_config = "configs/candidate_gate_v1.toml"',
+                'gate_config = "configs/candidate_gate_baseline_v0.toml"',
                 "",
                 "[prepare]",
                 "price_start_buffer_days = 30",

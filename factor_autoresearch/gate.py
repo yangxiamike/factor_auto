@@ -56,7 +56,6 @@ def apply_candidate_gate(candidate: Candidate, metrics_result: MetricsResult, co
             details={"reason": "metrics frame is empty"},
         )
 
-    sign = 1.0 if candidate.expected_direction == "positive" else -1.0
     scale_ic = config.gate.components["ic_scale"]
     scale_rankic = config.gate.components["rankic_scale"]
     component_max = config.gate.components["component_max"]
@@ -64,9 +63,6 @@ def apply_candidate_gate(candidate: Candidate, metrics_result: MetricsResult, co
     mono_max = config.gate.components["monotonicity_max"]
 
     scored_frame = frame
-    scored_frame["directional_ic_mean"] = sign * scored_frame["ic_mean"]
-    scored_frame["directional_rankic_mean"] = sign * scored_frame["rankic_mean"]
-    scored_frame["directional_monotonicity"] = sign * scored_frame["monotonicity"]
     scored_frame["ic_component"] = scored_frame["directional_ic_mean"].apply(
         lambda value: _clamp(value / scale_ic, 0.0, component_max) if pd.notna(value) else 0.0
     )
@@ -88,14 +84,48 @@ def apply_candidate_gate(candidate: Candidate, metrics_result: MetricsResult, co
     complexity_score = int(metrics_result.aggregate["complexity_score"])
     best_horizon_score = float(best_row["horizon_score"])
 
-    failed_rules: list[str] = []
+    hard_failed_rules: list[str] = []
     if not pd.notna(coverage_mean) or coverage_mean < config.gate.coverage_mean_min:
-        failed_rules.append("coverage_mean")
+        hard_failed_rules.append("coverage_mean")
     if effective_trade_days < config.gate.effective_trade_days_min:
-        failed_rules.append("effective_trade_days")
+        hard_failed_rules.append("effective_trade_days")
     if complexity_score > config.gate.complexity_score_max:
-        failed_rules.append("complexity_score")
-    if not pd.notna(best_horizon_score) or best_horizon_score < config.gate.best_horizon_score_min:
+        hard_failed_rules.append("complexity_score")
+    if (
+        not pd.notna(best_row["directional_ic_mean"])
+        or float(best_row["directional_ic_mean"])
+        < config.gate.best_horizon_directional_ic_mean_min
+    ):
+        hard_failed_rules.append("best_horizon_directional_ic_mean")
+    if (
+        not pd.notna(best_row["directional_rankic_mean"])
+        or float(best_row["directional_rankic_mean"])
+        < config.gate.best_horizon_directional_rankic_mean_min
+    ):
+        hard_failed_rules.append("best_horizon_directional_rankic_mean")
+    if (
+        not pd.notna(best_row["directional_ic_positive_ratio"])
+        or float(best_row["directional_ic_positive_ratio"])
+        < config.gate.best_horizon_directional_ic_positive_ratio_min
+    ):
+        hard_failed_rules.append("best_horizon_directional_ic_positive_ratio")
+    if (
+        not pd.notna(best_row["directional_rankic_positive_ratio"])
+        or float(best_row["directional_rankic_positive_ratio"])
+        < config.gate.best_horizon_directional_rankic_positive_ratio_min
+    ):
+        hard_failed_rules.append("best_horizon_directional_rankic_positive_ratio")
+    if (
+        not pd.notna(best_row["directional_monotonicity"])
+        or float(best_row["directional_monotonicity"])
+        <= config.gate.best_horizon_directional_monotonicity_min
+    ):
+        hard_failed_rules.append("best_horizon_directional_monotonicity")
+
+    failed_rules = list(hard_failed_rules)
+    if not hard_failed_rules and (
+        not pd.notna(best_horizon_score) or best_horizon_score < config.gate.best_horizon_score_min
+    ):
         failed_rules.append("best_horizon_score")
 
     signal_direction = None
@@ -108,6 +138,17 @@ def apply_candidate_gate(candidate: Candidate, metrics_result: MetricsResult, co
         "complexity_score": complexity_score,
         "best_horizon": best_row["horizon"],
         "best_horizon_score": best_horizon_score,
+        "best_horizon_directional_ic_mean": float(best_row["directional_ic_mean"]),
+        "best_horizon_directional_rankic_mean": float(best_row["directional_rankic_mean"]),
+        "best_horizon_ic_positive_ratio": float(best_row["ic_positive_ratio"]),
+        "best_horizon_rankic_positive_ratio": float(best_row["rankic_positive_ratio"]),
+        "best_horizon_directional_ic_positive_ratio": float(
+            best_row["directional_ic_positive_ratio"]
+        ),
+        "best_horizon_directional_rankic_positive_ratio": float(
+            best_row["directional_rankic_positive_ratio"]
+        ),
+        "best_horizon_directional_monotonicity": float(best_row["directional_monotonicity"]),
         "ic_component": float(best_row["ic_component"]),
         "rankic_component": float(best_row["rankic_component"]),
         "monotonicity_component": float(best_row["monotonicity_component"]),

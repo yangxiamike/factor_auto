@@ -50,6 +50,7 @@ def compute_candidate_metrics(
     dataset: DatasetBundle,
     config: ExperimentConfig,
     complexity_score: int,
+    expected_direction: str = "positive",
 ) -> MetricsResult:
     """计算候选指标: 逐个 horizon 产出日度序列和汇总统计。"""
 
@@ -60,6 +61,7 @@ def compute_candidate_metrics(
         dataset.panel["in_universe"].fillna(False).groupby(level="trade_date").sum().astype(int)
     )
     gate = config.gate
+    direction_sign = 1.0 if expected_direction == "positive" else -1.0
 
     horizon_summary_rows: list[dict[str, object]] = []
     ic_series_rows: list[dict[str, object]] = []
@@ -117,6 +119,10 @@ def compute_candidate_metrics(
         effective_trade_days = int(day_frame["ic"].notna().sum())
         ic_mean = float(day_frame["ic"].mean()) if not day_frame.empty else math.nan
         rankic_mean = float(day_frame["rankic"].mean()) if not day_frame.empty else math.nan
+        directional_ic_mean = direction_sign * ic_mean if pd.notna(ic_mean) else math.nan
+        directional_rankic_mean = (
+            direction_sign * rankic_mean if pd.notna(rankic_mean) else math.nan
+        )
         ic_std = float(day_frame["ic"].std(ddof=0)) if not day_frame.empty else math.nan
         icir = float(ic_mean / ic_std) if pd.notna(ic_std) and ic_std != 0 else math.nan
         coverage_mean = float(day_frame["coverage"].mean()) if not day_frame.empty else math.nan
@@ -125,6 +131,25 @@ def compute_candidate_metrics(
         )
         monotonicity_mean = (
             float(day_frame["monotonicity"].mean()) if not day_frame.empty else math.nan
+        )
+        directional_monotonicity = (
+            direction_sign * monotonicity_mean if pd.notna(monotonicity_mean) else math.nan
+        )
+        valid_ic = day_frame["ic"].dropna()
+        valid_rankic = day_frame["rankic"].dropna()
+        ic_positive_ratio = (
+            float(valid_ic.gt(0).mean()) if not valid_ic.empty else math.nan
+        )
+        rankic_positive_ratio = (
+            float(valid_rankic.gt(0).mean()) if not valid_rankic.empty else math.nan
+        )
+        directional_ic_positive_ratio = (
+            float(valid_ic.mul(direction_sign).gt(0).mean()) if not valid_ic.empty else math.nan
+        )
+        directional_rankic_positive_ratio = (
+            float(valid_rankic.mul(direction_sign).gt(0).mean())
+            if not valid_rankic.empty
+            else math.nan
         )
 
         quantile_summary: dict[str, float] = {}
@@ -141,6 +166,13 @@ def compute_candidate_metrics(
                 "horizon": horizon,
                 "ic_mean": ic_mean,
                 "rankic_mean": rankic_mean,
+                "ic_positive_ratio": ic_positive_ratio,
+                "rankic_positive_ratio": rankic_positive_ratio,
+                "directional_ic_positive_ratio": directional_ic_positive_ratio,
+                "directional_rankic_positive_ratio": directional_rankic_positive_ratio,
+                "directional_ic_mean": directional_ic_mean,
+                "directional_rankic_mean": directional_rankic_mean,
+                "directional_monotonicity": directional_monotonicity,
                 "icir": icir,
                 "coverage_mean": coverage_mean,
                 "long_short_return": long_short_mean,

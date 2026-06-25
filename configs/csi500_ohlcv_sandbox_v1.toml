@@ -37,7 +37,7 @@ base_filters_inherited = [
     "limit_up",
     "limit_down",
 ]
-gate_config = "configs/candidate_gate_v1.toml"
+gate_config = "configs/candidate_gate_baseline_v0.toml"
 
 [prepare]
 price_start_buffer_days = 30

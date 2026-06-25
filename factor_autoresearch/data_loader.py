@@ -16,7 +16,6 @@ import pandas as pd
 
 from factor_autoresearch.config import ExperimentConfig
 
-
 # ============== 字段约定 ==============
 PANEL_COLUMNS = [
     "trade_date",

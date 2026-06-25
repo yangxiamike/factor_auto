@@ -1,6 +1,4 @@
-"""
-评估编排模块: 负责串联候选因子加载、静态校验、批量评估与结果落盘流程。
-"""
+"""Orchestrate candidate evaluation, artifact writing, and batch summaries."""
 
 from __future__ import annotations
 
@@ -16,10 +14,11 @@ import pandas as pd
 from factor_autoresearch import __version__
 from factor_autoresearch.artifacts import ArtifactWriter
 from factor_autoresearch.calculator import ExpressionValidationError, FactorCalc
-from factor_autoresearch.candidates import Candidate, load_candidate_batch
+from factor_autoresearch.candidates import Candidate, InvalidCandidateRecord, load_candidate_batch
 from factor_autoresearch.config import ExperimentConfig
 from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.data_loader import DataLoader, DatasetBundle
+from factor_autoresearch.diagnostics import DIAGNOSTIC_COLUMNS, build_candidate_diagnostics
 from factor_autoresearch.gate import GateDecision, apply_candidate_gate
 from factor_autoresearch.logging_config import configure_logging
 from factor_autoresearch.metrics import MetricsResult, compute_candidate_metrics
@@ -28,26 +27,36 @@ from factor_autoresearch.registry import RegistryWriter
 
 LOGGER = logging.getLogger(__name__)
 
+RESULT_TOP_LEVEL_KEYS = [
+    "id",
+    "status",
+    "failure_bucket",
+    "failed_rules",
+    "best_horizon",
+    "best_horizon_score",
+    "signal_direction",
+    "details",
+    "metrics",
+]
 
-# ============== 评估结果结构 ==============
+
 @dataclass(frozen=True)
 class EvaluationArtifacts:
-    """评估产物: 记录本次评估运行目录与候选结果列表。"""
-
     run_dir: Path
     results: list[dict[str, Any]]
 
 
 def _sha256_file(path: Path) -> str:
-    """文件哈希: 计算文件内容的 sha256 标识。"""
-
     return f"sha256:{sha256(path.read_bytes()).hexdigest()}"
 
 
-# ============== 静态校验入口 ==============
-def validate_dataset_contract(dataset_path: str | Path, config: ExperimentConfig) -> None:
-    """数据集契约校验: 确认 dataset manifest 与实验配置一致。"""
+def _hash_gate_config(config: ExperimentConfig) -> str:
+    payload = {"gate": config.gate.as_dict()}
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+    return f"sha256:{sha256(canonical.encode('utf-8')).hexdigest()}"
 
+
+def validate_dataset_contract(dataset_path: str | Path, config: ExperimentConfig) -> None:
     manifest_path = Path(dataset_path) / "manifest.json"
     if not manifest_path.exists():
         raise FileNotFoundError(f"dataset manifest not found: {manifest_path}")
@@ -65,8 +74,6 @@ def run_static_validation(
     dataset_path: str | Path,
     config: ExperimentConfig,
 ) -> list[dict[str, Any]]:
-    """静态校验: 批量校验候选表达式并返回有效性结果。"""
-
     validate_dataset_contract(dataset_path, config)
     calc = FactorCalc(config)
     candidates, invalid_records = load_candidate_batch(candidates_path, config)
@@ -76,35 +83,34 @@ def run_static_validation(
             metadata = calc.validate_candidate(candidate)
         except ExpressionValidationError as exc:
             results.append(
-                {
-                    "id": candidate.candidate_id,
-                    "status": "invalid",
-                    "failure_bucket": "validate_failed",
-                    "details": {"message": str(exc)},
-                }
+                _normalize_result(
+                    {
+                        "id": candidate.candidate_id,
+                        "status": "invalid",
+                        "failure_bucket": "validate_failed",
+                        "details": {"message": str(exc)},
+                    }
+                )
             )
             continue
         results.append(
-            {
-                "id": candidate.candidate_id,
-                "status": "valid",
-                "failure_bucket": None,
-                "details": {
-                    "complexity_score": metadata.complexity_score,
-                    "inferred_lookback": metadata.inferred_lookback,
-                },
-            }
+            _normalize_result(
+                {
+                    "id": candidate.candidate_id,
+                    "status": "valid",
+                    "failure_bucket": None,
+                    "details": {
+                        "complexity_score": metadata.complexity_score,
+                        "inferred_lookback": metadata.inferred_lookback,
+                    },
+                }
+            )
         )
     return results
 
 
-# ============== 评估编排器 ==============
 class Evaluator:
-    """评估器: 负责执行单个批次的候选评估与产物写出。"""
-
     def __init__(self, context: EvaluationContext) -> None:
-        """初始化: 准备评估上下文依赖与落盘组件。"""
-
         self.context = context
         self.factor_calc = FactorCalc(context.config)
         self.loader = DataLoader(config=context.config, dataset_path=context.dataset_path)
@@ -112,10 +118,10 @@ class Evaluator:
         self.artifacts = ArtifactWriter(context)
 
     def evaluate_batch(self) -> EvaluationArtifacts:
-        """批量评估: 执行整批候选因子的加载、评估、汇总与写出。"""
-
         dataset = self.loader.load()
-        candidates, invalid_records = load_candidate_batch(self.context.candidates_path, self.context.config)
+        candidates, invalid_records = load_candidate_batch(
+            self.context.candidates_path, self.context.config
+        )
         self.artifacts.prepare_run_dir()
         configure_logging(
             run_dir=self.context.run_dir,
@@ -133,6 +139,7 @@ class Evaluator:
         results = self._collect_invalid_results(invalid_records)
         metric_frames: list[pd.DataFrame] = []
         ic_frames: list[pd.DataFrame] = []
+        diagnostics_frames: list[pd.DataFrame] = []
 
         for candidate in candidates:
             LOGGER.info(
@@ -143,12 +150,25 @@ class Evaluator:
                     "stage": "candidate",
                 },
             )
-            result, metrics_result = self.evaluate_candidate(candidate, dataset)
+            result, metrics_result, diagnostics_frame = self.evaluate_candidate(candidate, dataset)
             results.append(result)
             self._append_metrics_frames(metrics_result, metric_frames, ic_frames)
+            if diagnostics_frame is not None and not diagnostics_frame.empty:
+                diagnostics_frames.append(diagnostics_frame)
 
         metrics_frame, ic_series_frame = self._combine_metric_frames(metric_frames, ic_frames)
-        self._write_batch_outputs(results, metrics_frame, ic_series_frame, dataset.manifest)
+        diagnostics_frame = (
+            pd.concat(diagnostics_frames, ignore_index=True)
+            if diagnostics_frames
+            else pd.DataFrame(columns=DIAGNOSTIC_COLUMNS)
+        )
+        self._write_batch_outputs(
+            results=results,
+            metrics_frame=metrics_frame,
+            ic_series_frame=ic_series_frame,
+            diagnostics_frame=diagnostics_frame,
+            dataset_manifest=dataset.manifest,
+        )
         LOGGER.info(
             "evaluation batch completed",
             extra={"run_id": self.context.run_id, "stage": "batch"},
@@ -159,19 +179,20 @@ class Evaluator:
         self,
         candidate: Candidate,
         dataset: DatasetBundle,
-    ) -> tuple[dict[str, Any], MetricsResult | None]:
-        """单因子评估: 返回候选评估结果，并隔离运行时异常。"""
-
+    ) -> tuple[dict[str, Any], MetricsResult | None, pd.DataFrame | None]:
         try:
             metadata = self.factor_calc.validate_candidate(candidate)
         except ExpressionValidationError as exc:
             return (
-                {
-                    "id": candidate.candidate_id,
-                    "status": "invalid",
-                    "failure_bucket": "validate_failed",
-                    "details": {"message": str(exc)},
-                },
+                _normalize_result(
+                    {
+                        "id": candidate.candidate_id,
+                        "status": "invalid",
+                        "failure_bucket": "validate_failed",
+                        "details": {"message": str(exc)},
+                    }
+                ),
+                None,
                 None,
             )
 
@@ -184,6 +205,13 @@ class Evaluator:
                 dataset=dataset,
                 config=self.context.config,
                 complexity_score=metadata.complexity_score,
+                expected_direction=candidate.expected_direction,
+            )
+            diagnostics_frame = build_candidate_diagnostics(
+                candidate_id=candidate.candidate_id,
+                factor=processed_factor,
+                dataset=dataset,
+                config=self.context.config,
             )
             decision = apply_candidate_gate(candidate, metrics_result, self.context.config)
             factor_values_path = self.artifacts.write_factor_values(
@@ -199,7 +227,11 @@ class Evaluator:
                     context=self.context,
                     factor_values_path=factor_values_path,
                 )
-            return self._result_from_decision(candidate, decision, metrics_result), metrics_result
+            return (
+                self._result_from_decision(candidate, decision, metrics_result),
+                metrics_result,
+                diagnostics_frame,
+            )
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception(
                 "candidate runtime error",
@@ -210,25 +242,32 @@ class Evaluator:
                 },
             )
             return (
-                {
-                    "id": candidate.candidate_id,
-                    "status": "error",
-                    "failure_bucket": "runtime_error",
-                    "details": {"message": str(exc)},
-                },
+                _normalize_result(
+                    {
+                        "id": candidate.candidate_id,
+                        "status": "error",
+                        "failure_bucket": "runtime_error",
+                        "details": {"message": str(exc)},
+                    }
+                ),
+                None,
                 None,
             )
 
-    def _build_run_manifest(self, candidate_count: int, dataset_manifest: dict[str, Any]) -> dict[str, Any]:
-        """运行清单: 组装本次评估批次的 manifest 内容。"""
-
+    def _build_run_manifest(
+        self, candidate_count: int, dataset_manifest: dict[str, Any]
+    ) -> dict[str, Any]:
+        gate_config_hash = getattr(self.context.config, "gate_config_hash", None) or _hash_gate_config(
+            self.context.config
+        )
         return {
             "run_id": self.context.run_id,
             "experiment_id": self.context.config.experiment_id,
             "dataset_id": self.context.config.dataset_id,
             "config_hash": self.context.config.config_hash,
-            "candidate_file_hash": _sha256_file(self.context.candidates_path),
+            "gate_config_hash": gate_config_hash,
             "gate_version": self.context.config.gate.version,
+            "candidate_file_hash": _sha256_file(self.context.candidates_path),
             "tool_version": __version__,
             "candidate_count": candidate_count,
             "dataset_manifest": dataset_manifest,
@@ -238,23 +277,29 @@ class Evaluator:
             },
         }
 
-    def _result_from_decision(self, candidate: Candidate, decision: GateDecision, metrics_result: MetricsResult) -> dict[str, Any]:
-        """评估结果组装: 把门禁决策与指标汇总成标准结果字典。"""
+    def _result_from_decision(
+        self,
+        candidate: Candidate,
+        decision: GateDecision,
+        metrics_result: MetricsResult,
+    ) -> dict[str, Any]:
+        return _normalize_result(
+            {
+                "id": candidate.candidate_id,
+                "status": decision.status,
+                "failure_bucket": decision.failure_bucket,
+                "failed_rules": decision.failed_rules,
+                "best_horizon": decision.best_horizon,
+                "best_horizon_score": decision.best_horizon_score,
+                "signal_direction": decision.signal_direction,
+                "details": decision.details,
+                "metrics": metrics_result.aggregate,
+            }
+        )
 
-        return {
-            "id": candidate.candidate_id,
-            "status": decision.status,
-            "failure_bucket": decision.failure_bucket,
-            "best_horizon": decision.best_horizon,
-            "best_horizon_score": decision.best_horizon_score,
-            "signal_direction": decision.signal_direction,
-            "details": decision.details,
-            "metrics": metrics_result.aggregate,
-        }
-
-    def _collect_invalid_results(self, invalid_records: list[Any]) -> list[dict[str, Any]]:
-        """无效记录收集: 把候选加载期的非法记录转成结果字典。"""
-
+    def _collect_invalid_results(
+        self, invalid_records: list[InvalidCandidateRecord]
+    ) -> list[dict[str, Any]]:
         return _invalid_results_from_records(invalid_records)
 
     def _append_metrics_frames(
@@ -263,8 +308,6 @@ class Evaluator:
         metric_frames: list[pd.DataFrame],
         ic_frames: list[pd.DataFrame],
     ) -> None:
-        """指标帧追加: 把单候选指标结果追加到批量聚合容器。"""
-
         if metrics_result is None:
             return
         metric_frames.append(metrics_result.horizon_rows)
@@ -275,33 +318,28 @@ class Evaluator:
         metric_frames: list[pd.DataFrame],
         ic_frames: list[pd.DataFrame],
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """指标帧合并: 合并批量评估过程中累积的指标明细。"""
-
         metrics_frame = pd.concat(metric_frames, ignore_index=True) if metric_frames else pd.DataFrame()
         ic_series_frame = pd.concat(ic_frames, ignore_index=True) if ic_frames else pd.DataFrame()
         return metrics_frame, ic_series_frame
 
     def _write_batch_outputs(
         self,
+        *,
         results: list[dict[str, Any]],
         metrics_frame: pd.DataFrame,
         ic_series_frame: pd.DataFrame,
+        diagnostics_frame: pd.DataFrame,
         dataset_manifest: dict[str, Any],
     ) -> None:
-        """批量结果写出: 统一写出结果明细与 summary 文本。"""
-
-        self.artifacts.write_results(results, metrics_frame, ic_series_frame)
-        summary_text = self._render_summary(results, metrics_frame, dataset_manifest)
+        self.artifacts.write_results(results, metrics_frame, ic_series_frame, diagnostics_frame)
+        summary_text = self._render_summary(results, dataset_manifest)
         self.artifacts.write_summary(summary_text)
 
     def _render_summary(
         self,
         results: list[dict[str, Any]],
-        metrics_frame: pd.DataFrame,
         dataset_manifest: dict[str, Any],
     ) -> str:
-        """摘要渲染: 生成评估批次的 markdown 总结文本。"""
-
         counts = {
             "evaluated": len(results),
             "passed": sum(item["status"] == "candidate_pass" for item in results),
@@ -309,64 +347,103 @@ class Evaluator:
             "invalid": sum(item["status"] == "invalid" for item in results),
             "errors": sum(item["status"] == "error" for item in results),
         }
+        failed_rule_counts: dict[str, int] = {}
+        for result in results:
+            for rule in result.get("failed_rules", []):
+                failed_rule_counts[rule] = failed_rule_counts.get(rule, 0) + 1
+
+        passed_results = [item for item in results if item["status"] == "candidate_pass"]
+
         lines = [
             f"# Run {self.context.run_id} Summary",
             "",
             "## Dataset",
-            f"dataset_id: {dataset_manifest['dataset_id']}",
-            f"experiment_id: {dataset_manifest['experiment_id']}",
-            f"universe: {dataset_manifest['universe']}",
-            f"date_range: {dataset_manifest['date_start']} to {dataset_manifest['date_end']}",
-            f"features: {', '.join(dataset_manifest['features'])}",
-            f"adjustment: {dataset_manifest['adjustment']}",
-            f"forward_return_definition: {dataset_manifest['forward_return_definition']}",
+            f"- dataset_id: {dataset_manifest['dataset_id']}",
+            f"- experiment_id: {dataset_manifest['experiment_id']}",
+            f"- universe: {dataset_manifest['universe']}",
+            f"- date_range: {dataset_manifest['date_start']} to {dataset_manifest['date_end']}",
             "",
             "## Batch Result",
-            *(f"{key}: {value}" for key, value in counts.items()),
+            *(f"- {key}: {value}" for key, value in counts.items()),
             "",
             "## Candidate Results",
-            "| id | status | best_horizon | score | failure_bucket | details |",
+            "| id | status | best_horizon | score | failed_rules | failure_bucket |",
             "| --- | --- | --- | --- | --- | --- |",
         ]
         for result in results:
-            candidate_line = "| {id} | {status} | {best_horizon} | {score} | {failure_bucket} | {details} |".format(
-                id=result["id"],
-                status=result["status"],
-                best_horizon=result.get("best_horizon", "-"),
-                score=result.get("best_horizon_score", "-"),
-                failure_bucket=result.get("failure_bucket") or "-",
-                details=json.dumps(result.get("details", {}), ensure_ascii=False),
-            )
-            lines.append(candidate_line)
-        if not metrics_frame.empty:
-            top = metrics_frame.sort_values("rankic_mean", ascending=False).head(5)
-            lines.extend(
-                [
-                    "",
-                    "## Top Horizon Rows",
-                    "| id | horizon | ic_mean | rankic_mean | monotonicity | coverage_mean | complexity |",
-                    "| --- | --- | --- | --- | --- | --- | --- |",
-                ]
-            )
-            for _, row in top.iterrows():
-                top_line = (
-                    "| {candidate_id} | {horizon} | {ic_mean:.6f} | {rankic_mean:.6f} | "
-                    "{monotonicity:.6f} | {coverage_mean:.6f} | {complexity_score} |"
+            failed_rules = ",".join(result.get("failed_rules", [])) or "-"
+            score = result.get("best_horizon_score")
+            score_text = "-" if score is None else str(score)
+            lines.append(
+                "| {id} | {status} | {best_horizon} | {score} | {failed_rules} | {failure_bucket} |".format(
+                    id=result["id"],
+                    status=result["status"],
+                    best_horizon=result.get("best_horizon") or "-",
+                    score=score_text,
+                    failed_rules=failed_rules,
+                    failure_bucket=result.get("failure_bucket") or "-",
                 )
-                lines.append(top_line.format(**row.fillna(0).to_dict()))
+            )
+
+        lines.extend(["", "## Failed Rules Summary"])
+        if failed_rule_counts:
+            lines.append("| rule | count |")
+            lines.append("| --- | --- |")
+            for rule, count in sorted(failed_rule_counts.items(), key=lambda item: (-item[1], item[0])):
+                lines.append(f"| {rule} | {count} |")
+        else:
+            lines.append("- none")
+
+        lines.extend(["", "## Passed Candidates"])
+        if passed_results:
+            lines.append("| id | best_horizon | score | signal_direction |")
+            lines.append("| --- | --- | --- | --- |")
+            for result in passed_results:
+                lines.append(
+                    "| {id} | {best_horizon} | {score} | {signal_direction} |".format(
+                        id=result["id"],
+                        best_horizon=result.get("best_horizon") or "-",
+                        score=result.get("best_horizon_score"),
+                        signal_direction=result.get("signal_direction") or "-",
+                    )
+                )
+        else:
+            lines.append("- none")
+
+        lines.extend(
+            [
+                "",
+                "## Diagnostics",
+                f"- {self.context.diagnostics_path}",
+            ]
+        )
         return "\n".join(lines) + "\n"
 
 
-# ============== 评估辅助函数 ==============
-def _invalid_results_from_records(invalid_records: list[Any]) -> list[dict[str, Any]]:
-    """无效结果转换: 把非法候选记录转换为统一结果结构。"""
+def _normalize_result(payload: dict[str, Any]) -> dict[str, Any]:
+    result = {key: None for key in RESULT_TOP_LEVEL_KEYS}
+    result["failed_rules"] = []
+    result["details"] = {}
+    result["metrics"] = {}
+    result.update(payload)
+    if result["failed_rules"] is None:
+        result["failed_rules"] = []
+    if result["details"] is None:
+        result["details"] = {}
+    if result["metrics"] is None:
+        result["metrics"] = {}
+    return result
 
+
+def _invalid_results_from_records(invalid_records: list[InvalidCandidateRecord]) -> list[dict[str, Any]]:
     return [
-        {
-            "id": record.candidate_id,
-            "status": "invalid",
-            "failure_bucket": record.failure_bucket,
-            "details": record.details,
-        }
+        _normalize_result(
+            {
+                "id": record.candidate_id,
+                "status": "invalid",
+                "failure_bucket": record.failure_bucket,
+                "details": record.details,
+            }
+        )
         for record in invalid_records
     ]
