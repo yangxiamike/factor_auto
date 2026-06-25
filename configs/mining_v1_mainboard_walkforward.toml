@@ -1,0 +1,22 @@
+﻿sample_protocol_id = "mining_v1_mainboard_walkforward" # 样本协议 ID
+purpose = "正式主板挖因子评分协议" # 用途：第一版正式评分协议
+split_policy = "walk_forward_with_final_oos" # 切片方式：滚动前推 + 最终样本外
+forward_return_definition = "next_open_to_open_v1" # 未来收益定义
+
+universe = "mainboard" # 股票范围：沪深主板
+source_universe_key = "univ_trade_mainboard" # 上游股票池键名，统一写主板键
+
+date_start = "2014-01-01" # 正式评分窗口开始
+date_end = "2026-05-31" # 正式评分窗口结束
+warmup_start = "2013-01-01" # 预热开始，只用于长窗口因子计算
+
+formation_years = 5 # 每折形成期长度：5 年
+test_years = 1 # 每折测试期长度：1 年
+embargo_trading_days = 20 # 形成期与测试期之间空 20 个交易日
+max_forward_horizon_days = 20 # 当前最长未来收益周期
+
+final_oos_start = "2026-01-01" # 最终样本外开始：只报告
+final_oos_end = "2026-05-31" # 最终样本外结束：只报告
+
+tail_missing_policy = "expected_for_forward_returns" # 尾部未来收益缺失视为预期现象
+notes = "正式评分窗口固定为 2014-01-01 到 2026-05-31；2026-01-01 到 2026-05-31 作为 final OOS，只报告不调参。" # 人类说明

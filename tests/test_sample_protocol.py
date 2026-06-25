@@ -114,7 +114,7 @@ def test_build_sample_protocol_uses_fixed_draft_when_dates_are_compatible(
         "\n".join(
             [
                 'sample_protocol_id = "mining_v1"',
-                'purpose = "严肃挖因子评价"',
+                'purpose = "strict mining evaluation"',
                 'split_policy = "time_ordered_oos_and_walk_forward"',
                 'forward_return_definition = "next_open_to_open_v1"',
                 'universe = "csi500"',
@@ -186,6 +186,118 @@ def test_build_sample_protocol_is_stable_for_reordered_duplicate_trade_dates(sam
         dataset_manifest=manifest,
         trade_dates=reordered_dates,
         sample_protocol_id="mining_v1",
+    )
+
+    assert canonical_json(protocol_a.as_dict()) == canonical_json(protocol_b.as_dict())
+    assert protocol_a.sample_protocol_hash == protocol_b.sample_protocol_hash
+
+
+def test_build_mainboard_walkforward_protocol_uses_real_trade_dates() -> None:
+    manifest = {
+        "dataset_id": "mainboard_pressure_v1",
+        "sample_protocol_id": "mining_v1_mainboard_walkforward",
+        "sample_protocol_config": {
+            "formation_years": 5,
+            "embargo_trade_days": 20,
+            "test_years": 1,
+            "final_oos_start": "2026-01-01",
+            "final_oos_end": "2026-05-31",
+        },
+        "date_start": "2014-01-01",
+        "date_end": "2026-05-31",
+        "warmup_start": "2013-01-01",
+        "forward_return_definition": "next_open_to_open_v1",
+        "universe": "mainboard",
+    }
+    trade_dates = pd.bdate_range("2013-01-01", "2026-05-31")
+
+    protocol = build_sample_protocol(
+        dataset_manifest=manifest,
+        trade_dates=trade_dates,
+    )
+
+    slices = protocol.as_dict()["slices"]
+    roles = [sample_slice["role"] for sample_slice in slices]
+    assert protocol.sample_protocol_id == "mining_v1_mainboard_walkforward"
+    assert protocol.split_policy == "walk_forward_5y_20d_embargo_1y_test_final_oos"
+    assert protocol.dataset_date_range == {
+        "date_start": "2014-01-01",
+        "date_end": "2026-05-31",
+    }
+    assert protocol.observed_date_range == {
+        "date_start": "2013-01-01",
+        "date_end": "2026-05-29",
+    }
+    assert protocol.rules["walk_forward"] == {
+        "formation_years": 5,
+        "embargo_trade_days": 20,
+        "test_years": 1,
+        "step_years": 1,
+        "generated_pairs": 6,
+    }
+    assert slices[0] == {
+        "slice_id": "wf_001_formation",
+        "role": "walk_forward_formation",
+        "date_start": "2014-01-01",
+        "date_end": "2018-12-31",
+        "pair_id": "wf_001",
+    }
+    assert slices[1] == {
+        "slice_id": "wf_001_embargo",
+        "role": "walk_forward_embargo",
+        "date_start": "2019-01-01",
+        "date_end": "2019-01-28",
+        "pair_id": "wf_001",
+    }
+    assert slices[2] == {
+        "slice_id": "wf_001_test",
+        "role": "walk_forward_test",
+        "date_start": "2019-01-29",
+        "date_end": "2020-01-28",
+        "pair_id": "wf_001",
+    }
+    assert roles.count("walk_forward_test") == 6
+    assert slices[-1] == {
+        "slice_id": "final_oos",
+        "role": "final_oos",
+        "date_start": "2026-01-01",
+        "date_end": "2026-05-29",
+    }
+
+
+def test_mainboard_walkforward_protocol_hash_is_stable_for_config_order() -> None:
+    manifest_a = {
+        "dataset_id": "mainboard_pressure_v1",
+        "sample_protocol_id": "mining_v1_mainboard_walkforward",
+        "sample_protocol_config": {
+            "formation_years": 5,
+            "embargo_trade_days": 20,
+            "test_years": 1,
+            "final_oos_start": "2026-01-01",
+            "final_oos_end": "2026-05-31",
+        },
+        "date_start": "2014-01-01",
+        "date_end": "2026-05-31",
+        "warmup_start": "2013-01-01",
+        "forward_return_definition": "next_open_to_open_v1",
+        "universe": "mainboard",
+    }
+    manifest_b = {
+        **manifest_a,
+        "sample_protocol_config": {
+            "final_oos_end": "2026-05-31",
+            "test_years": 1,
+            "final_oos_start": "2026-01-01",
+            "embargo_trade_days": 20,
+            "formation_years": 5,
+        },
+    }
+    trade_dates = pd.bdate_range("2013-01-01", "2026-05-31").tolist()
+
+    protocol_a = build_sample_protocol(dataset_manifest=manifest_a, trade_dates=trade_dates)
+    protocol_b = build_sample_protocol(
+        dataset_manifest=manifest_b,
+        trade_dates=list(reversed(trade_dates)) + trade_dates[:5],
     )
 
     assert canonical_json(protocol_a.as_dict()) == canonical_json(protocol_b.as_dict())

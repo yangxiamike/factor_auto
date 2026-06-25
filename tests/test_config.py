@@ -50,3 +50,30 @@ def test_load_mainboard_pressure_config() -> None:
     assert config.prepare.exclude_markets == []
     assert config.prepare.include_exchanges == []
     assert config.prepare.exclude_exchanges == []
+
+
+def test_load_mainboard_mining_v1_config(tmp_path) -> None:
+    source_path = Path("configs/mainboard_mining_v1.toml")
+    config_text = source_path.read_text(encoding="utf-8-sig")
+    config_root = tmp_path / "configs"
+    config_root.mkdir()
+    config_copy = config_root / "mainboard_mining_v1.toml"
+    config_copy.write_text(config_text, encoding="utf-8")
+
+    gate_source = Path("configs/candidate_gate_baseline_v0.toml")
+    gate_copy = config_root / "candidate_gate_baseline_v0.toml"
+    gate_copy.write_text(gate_source.read_text(encoding="utf-8-sig"), encoding="utf-8")
+
+    config = load_experiment_config(config_copy)
+
+    assert config.experiment_id == "mainboard_mining_v1"
+    assert config.dataset_id == "mainboard_mining_v1"
+    assert config.universe == "mainboard"
+    assert config.date_start == "2014-01-01"
+    assert config.date_end == "2026-05-31"
+    assert config.source_universe_key == "univ_trade_mainboard"
+    assert config.prepare.include_markets == ["主板"]
+    assert config.prepare.exclude_markets == []
+    assert config.prepare.include_exchanges == ["SSE", "SZSE"]
+    assert config.prepare.exclude_exchanges == []
+    assert config.gate.version == "candidate_gate_baseline_v0"

@@ -147,6 +147,41 @@ def test_cli_dataset_show_slices_outputs_protocol(sample_dataset_dir) -> None:
     assert payload["slices"][0]["slice_id"] == "formation"
 
 
+def test_cli_dataset_show_slices_outputs_mainboard_walkforward_protocol(tmp_path: Path) -> None:
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir()
+    pd.DataFrame({"trade_date": pd.bdate_range("2013-01-01", "2026-05-31")}).to_parquet(
+        dataset_dir / "panel.parquet",
+        index=False,
+    )
+    manifest = {
+        "dataset_id": "mainboard_pressure_v1",
+        "experiment_id": "mainboard_pressure_v1",
+        "sample_protocol_id": "mining_v1_mainboard_walkforward",
+        "sample_protocol_config": {
+            "formation_years": 5,
+            "embargo_trade_days": 20,
+            "test_years": 1,
+            "final_oos_start": "2026-01-01",
+            "final_oos_end": "2026-05-31",
+        },
+        "date_start": "2014-01-01",
+        "date_end": "2026-05-31",
+        "warmup_start": "2013-01-01",
+        "forward_return_definition": "next_open_to_open_v1",
+        "universe": "mainboard",
+    }
+    (dataset_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["dataset", "show-slices", "--dataset", str(dataset_dir)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["sample_protocol_id"] == "mining_v1_mainboard_walkforward"
+    assert payload["slices"][-1]["role"] == "final_oos"
+    assert payload["sample_protocol_hash"].startswith("sha256:")
+
 def test_cli_evaluate_exposes_engine_and_jobs_options() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["factor", "evaluate", "--help"])

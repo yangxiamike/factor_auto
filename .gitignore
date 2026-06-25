@@ -1,6 +1,9 @@
-.DS_Store
+﻿.DS_Store
 .venv/
 .pytest_cache/
 __pycache__/
 *.pyc
 .worktrees/
+
+# Large frozen local dataset
+datasets/mainboard_mining_v1/

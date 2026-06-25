@@ -1,4 +1,4 @@
-# 区块二数据与样本协议说明
+﻿# 区块二数据与样本协议说明
 
 日期：2026-06-24
 
@@ -180,6 +180,27 @@ agent 不负责：
 - 不能由 candidate 或单次 run 临时覆盖
 - 同一 dataset + 同一 protocol 要生成稳定 hash
 
+#### `mining_v1_mainboard_walkforward`
+
+`sample protocol`（样本协议，用来固定正式评分窗口、滚动切片和最终样本外边界）在主板正式版里先按下面这套口径执行：
+
+- 正式评分窗口：`2014-01-01` 到 `2026-05-31`
+- 预热期：`2013-01-01` 起，只用于长窗口因子计算
+- 股票范围：沪深主板
+- 股票池来源：`source_universe_key = "univ_trade_mainboard"`
+- 主评估方式：5 年 formation（形成期） + 20 个交易日 embargo（隔离带，防止未来收益泄漏） + 1 年 test（测试期）的 walk-forward（滚动前推验证）
+- final OOS（final out-of-sample，最终样本外）：`2026-01-01` 到 `2026-05-31`，只报告，不用于调参
+
+这套协议的定位是“第一版正式主板挖因子评分协议”。
+
+它解决的是：
+
+- 同一批主板候选因子始终用同一段历史做正式评分
+- walk-forward 切片有稳定边界，不会因单次 run 临时漂移
+- final OOS 有独立身份，不会混进调参样本
+
+区块二只负责记录引用关系、切片规则和质量追溯，不在本仓重写主板股票池构造逻辑。
+
 ### 7.3 data quality policy
 
 触发例子：
@@ -208,6 +229,20 @@ agent 不负责：
 - 字段要稳定
 - 字段语义要清楚
 - 新旧 run 需要可追溯、可比较
+
+当前主板正式版建议在 `manifest`（清单元数据，用来记录数据来源、样本协议和追溯字段）里至少保留下面这些字段：
+
+| 字段 | 中文解释 |
+| --- | --- |
+| `dataset_id` | 冻结数据集名称，用来区分不同主板数据集 |
+| `source_universe_key` | 上游股票池键名，本轮统一写 `univ_trade_mainboard` |
+| `sample_protocol_id` | 样本协议名称，用来标识这套正式评分切片 |
+| `sample_protocol_hash` | 样本协议指纹，用来确认切片规则没有被悄悄改动 |
+| `date_start` | 正式评分窗口开始日期 |
+| `date_end` | 正式评分窗口结束日期 |
+| `warmup_start` | 预热期起点，只用于长窗口因子计算 |
+| `forward_return_definition` | 未来收益定义，用来说明收益是怎么算出来的 |
+| `data_quality_report` | 数据质量报告路径或标识，用来回看 warning / fail 结论 |
 
 ## 8. 当前推荐执行方式
 

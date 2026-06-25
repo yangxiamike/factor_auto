@@ -1,0 +1,57 @@
+﻿experiment_id = "mainboard_mining_v1" # 实验 ID
+dataset_id = "mainboard_mining_v1" # 冻结数据集 ID
+universe = "mainboard" # 股票范围：沪深主板
+date_start = "2014-01-01" # 正式评分窗口开始
+date_end = "2026-05-31" # 正式评分窗口结束
+warmup_start = "2013-01-01" # 预热开始，只用于长窗口因子计算
+adjustment = "hfq" # 后复权价格
+forward_return_definition = "next_open_to_open_v1" # 未来收益定义
+sample_protocol_id = "mining_v1_mainboard_walkforward" # 引用的样本协议 ID
+sample_protocol_config = "configs/mining_v1_mainboard_walkforward.toml" # 样本协议配置路径
+
+allowed_fields = ["open_hfq", "high_hfq", "low_hfq", "close_hfq", "volume"] # 可用字段
+allowed_functions = [
+    "abs",
+    "log",
+    "delay",
+    "ts_mean",
+    "ts_std",
+    "ts_delta",
+    "ts_return",
+    "ts_rank",
+    "cs_rank",
+    "cs_zscore",
+] # 可用算子
+allowed_windows = [1, 3, 5, 10, 20] # 可用窗口
+categories = ["momentum", "reversal", "volatility", "liquidity", "volume", "intraday", "gap"] # 候选分类
+horizons = ["1d", "5d", "20d"] # 未来收益周期
+features = ["open_hfq", "high_hfq", "low_hfq", "close_hfq", "volume"] # 冻结面板特征
+preprocess_exposures = ["industry", "market_cap"] # 预处理暴露
+
+source = "zer0share" # 数据来源
+source_path = "C:/Users/hp/Documents/zer0share" # 上游本地路径
+source_universe_key = "univ_trade_mainboard" # 统一使用主板股票池键
+industry_source = "sw_l1_name" # 行业口径：申万一级
+base_filters_inherited = [
+    "mainboard_membership_from_univ_trade_mainboard",
+    "st",
+    "delisting",
+    "suspension",
+    "low_liquidity",
+    "low_volume",
+    "limit_up",
+    "limit_down",
+] # 继承的基础过滤
+gate_config = "configs/candidate_gate_baseline_v0.toml" # 准入门槛配置
+
+[prepare]
+price_start_buffer_days = 30 # 价格预留缓冲天数
+use_incremental_universe = true # 只读取股票池覆盖到的标的
+include_markets = ["主板"] # 业务口径：主板
+exclude_markets = [] # 不额外排除市场层
+include_exchanges = ["SSE", "SZSE"] # 交易所口径：上交所 + 深交所
+exclude_exchanges = [] # 不额外排除交易所
+
+[preprocess]
+winsorize_mad_scale = 5.0 # MAD 去极值强度
+size_exposure = "log_market_cap" # 市值暴露定义

@@ -27,14 +27,14 @@ def test_prepare_fixed_dataset_from_fake_zer0share(tmp_path) -> None:
     trade_cal_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         {
-            "exchange": ["SSE", "SSE", "SSE"],
-            "cal_date": ["20240102", "20240103", "20240104"],
-            "is_open": [True, True, True],
-            "pretrade_date": ["20240101", "20240102", "20240103"],
+            "exchange": ["SSE", "SSE", "SSE", "SSE"],
+            "cal_date": ["20231229", "20240102", "20240103", "20240104"],
+            "is_open": [True, True, True, True],
+            "pretrade_date": ["20231228", "20231229", "20240102", "20240103"],
         }
     ).to_parquet(trade_cal_dir / "data.parquet", index=False)
 
-    for trade_date in ["20240102", "20240103", "20240104"]:
+    for trade_date in ["20231229", "20240102", "20240103", "20240104"]:
         universe_dir = data_dir / "stock" / "universe" / "name=univ_trade_zz500" / f"date={trade_date}"
         universe_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(
@@ -89,13 +89,42 @@ def test_prepare_fixed_dataset_from_fake_zer0share(tmp_path) -> None:
     ).to_parquet(industry_dir / "data.parquet", index=False)
 
     config_path = write_test_config_files(source_dir)
+    config_text = config_path.read_text(encoding="utf-8")
+    config_text = config_text.replace(
+        'gate_config = "configs/candidate_gate_baseline_v0.toml"',
+        '\n'.join(
+            [
+                'gate_config = "configs/candidate_gate_baseline_v0.toml"',
+                'warmup_start = "2023-12-29"',
+                'sample_protocol_id = "sandbox_v1"',
+                '',
+                '[sample_protocol_config]',
+                'note = "fixture"',
+            ]
+        ),
+    )
+    config_path.write_text(config_text, encoding="utf-8")
     config = load_experiment_config(config_path)
+    assert config.warmup_start == "2023-12-29"
+    assert config.sample_protocol_id == "sandbox_v1"
+    assert config.sample_protocol_config == {"note": "fixture"}
     output_dir = tmp_path / "prepared"
     prepared = prepare_fixed_dataset(config=config, output_path=output_dir)
 
     assert (output_dir / "panel.parquet").exists()
     assert (output_dir / "forward_returns.parquet").exists()
+    assert prepared.panel["trade_date"].min().strftime("%Y-%m-%d") == "2023-12-29"
     assert prepared.manifest["dataset_id"] == "sandbox_v1"
+    assert prepared.manifest["date_start"] == "2024-01-01"
+    assert prepared.manifest["warmup_start"] == "2023-12-29"
+    assert prepared.manifest["sample_protocol_id"] == "sandbox_v1"
+    assert prepared.manifest["sample_protocol_config"] == {"note": "fixture"}
+    assert prepared.manifest["sample_protocol_hash"].startswith("sha256:")
+    assert prepared.manifest["data_quality_report"] == {
+        "status": "not_generated",
+        "json_path": "data_quality_report.json",
+        "markdown_path": "data_quality_report.md",
+    }
     assert prepared.manifest["universe_filter"] == {
         "include_markets": [],
         "exclude_markets": [],
@@ -103,7 +132,10 @@ def test_prepare_fixed_dataset_from_fake_zer0share(tmp_path) -> None:
         "exclude_exchanges": [],
     }
     assert {"open_hfq", "close_hfq", "industry", "market_cap"}.issubset(prepared.panel.columns)
-
+    readme = (output_dir / "README.md").read_text(encoding="utf-8")
+    assert "- warmup_start: 2023-12-29" in readme
+    assert "- sample_protocol_id: sandbox_v1" in readme
+    assert "- sample_protocol_hash: sha256:" in readme
 
 def test_filter_universe_members_by_market_and_exchange(test_config) -> None:
     universe_members = pd.DataFrame(

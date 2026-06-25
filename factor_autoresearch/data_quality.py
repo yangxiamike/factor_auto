@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
@@ -425,13 +425,16 @@ def _check_date_range_consistency(
 
     manifest_start = None
     manifest_end = None
+    manifest_warmup_start = None
     if manifest is not None and "date_start" in manifest and "date_end" in manifest:
         manifest_start = _parse_date_value(manifest["date_start"])
         manifest_end = _parse_date_value(manifest["date_end"])
+        manifest_warmup_start = _parse_date_value(manifest.get("warmup_start"))
         details["manifest_range"] = {
             "date_start": _format_date(manifest_start),
             "date_end": _format_date(manifest_end),
         }
+        details["manifest_warmup_start"] = _format_date(manifest_warmup_start)
         if manifest_start is None or manifest_end is None:
             mismatches.append("manifest date_start/date_end could not be parsed")
         else:
@@ -439,22 +442,23 @@ def _check_date_range_consistency(
             panel_end = _parse_date_value(panel_range["date_end"])
             forward_start = _parse_date_value(forward_range["date_start"])
             forward_end = _parse_date_value(forward_range["date_end"])
+            declared_start_bound = manifest_warmup_start or manifest_start
             if (
-                not _range_respects_declared_bounds(panel_start, panel_end, manifest_start, manifest_end)
-                or not _range_gap_is_within_tolerance(panel_start, panel_end, manifest_start, manifest_end)
+                not _range_respects_declared_bounds(panel_start, panel_end, declared_start_bound, manifest_end)
+                or not _range_gap_is_within_tolerance(panel_start, panel_end, declared_start_bound, manifest_end)
             ):
                 mismatches.append("panel.parquet date range is not compatible with manifest date range")
             if (
                 not _range_respects_declared_bounds(
                     forward_start,
                     forward_end,
-                    manifest_start,
+                    declared_start_bound,
                     manifest_end,
                 )
                 or not _range_gap_is_within_tolerance(
                     forward_start,
                     forward_end,
-                    manifest_start,
+                    declared_start_bound,
                     manifest_end,
                 )
             ):
@@ -466,12 +470,15 @@ def _check_date_range_consistency(
         details["config_range"] = {
             "date_start": config.date_start,
             "date_end": config.date_end,
+            "warmup_start": config.warmup_start,
         }
         if manifest_start is not None and manifest_end is not None:
             if config.date_start != _format_date(manifest_start) or config.date_end != _format_date(
                 manifest_end
             ):
                 mismatches.append("config date range does not match manifest date range")
+            if manifest_warmup_start is not None and config.warmup_start != _format_date(manifest_warmup_start):
+                mismatches.append("config warmup_start does not match manifest warmup_start")
 
     if mismatches:
         checks.append(

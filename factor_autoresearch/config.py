@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
+# ============== Hash helpers ==============
 def _hash_payload(payload: dict[str, Any]) -> str:
     """Return a stable sha256 hash for a configuration payload."""
 
@@ -17,6 +18,7 @@ def _hash_payload(payload: dict[str, Any]) -> str:
     return f"sha256:{sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
+# ============== Config models ==============
 @dataclass(frozen=True)
 class GateConfig:
     """Gate thresholds and scoring weights."""
@@ -71,6 +73,9 @@ class ExperimentConfig:
     universe: str
     date_start: str
     date_end: str
+    warmup_start: str
+    sample_protocol_id: str | None
+    sample_protocol_config: dict[str, Any]
     adjustment: str
     forward_return_definition: str
     allowed_fields: list[str]
@@ -103,12 +108,11 @@ class ExperimentConfig:
         return payload
 
 
+# ============== Load helpers ==============
 def _load_toml(path: Path) -> dict[str, Any]:
-    """Read a TOML file."""
+    """Read a TOML file, accepting UTF-8 files with or without BOM."""
 
-    with path.open("rb") as handle:
-        return tomllib.load(handle)
-
+    return tomllib.loads(path.read_text(encoding="utf-8-sig"))
 
 def _get_gate_threshold(
     gate_raw: dict[str, Any],
@@ -116,6 +120,7 @@ def _get_gate_threshold(
     legacy_key: str,
 ) -> float:
     """Read a gate threshold with fallback to the legacy field name."""
+
     if new_key in gate_raw:
         return float(gate_raw[new_key])
     if legacy_key in gate_raw:
@@ -123,14 +128,11 @@ def _get_gate_threshold(
     return 0.0
 
 
-def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
-    """Load an experiment config and its referenced gate config."""
+def _load_gate_config(gate_path: Path) -> GateConfig:
+    """Load gate configuration from a TOML file."""
 
-    experiment_path = Path(config_path).resolve()
-    raw = _load_toml(experiment_path)
-    gate_path = (experiment_path.parent.parent / raw["gate_config"]).resolve()
     gate_raw = _load_toml(gate_path)["gate"]
-    gate = GateConfig(
+    return GateConfig(
         version=gate_raw["version"],
         coverage_mean_min=float(gate_raw["coverage_mean_min"]),
         effective_trade_days_min=int(gate_raw["effective_trade_days_min"]),
@@ -166,18 +168,52 @@ def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
         weights={key: float(value) for key, value in gate_raw["weights"].items()},
         components={key: float(value) for key, value in gate_raw["components"].items()},
     )
+
+
+
+def _load_sample_protocol_config(experiment_path: Path, raw: dict[str, Any]) -> dict[str, Any]:
+    """Load inline or referenced sample protocol configuration."""
+
+    value = raw.get("sample_protocol_config", {})
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        protocol_path = (experiment_path.parent.parent / value).resolve()
+        if not protocol_path.exists() and Path(value).exists():
+            protocol_path = Path(value).resolve()
+        loaded = _load_toml(protocol_path)
+        if "embargo_trading_days" in loaded and "embargo_trade_days" not in loaded:
+            loaded["embargo_trade_days"] = loaded["embargo_trading_days"]
+        loaded["config_path"] = str(protocol_path)
+        return loaded
+    if value is None:
+        return {}
+    raise TypeError("sample_protocol_config must be a TOML table, a path string, or omitted")
+
+# ============== Public loader ==============
+def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
+    """Load an experiment config and its referenced gate config."""
+
+    experiment_path = Path(config_path).resolve()
+    raw = _load_toml(experiment_path)
+    gate_path = (experiment_path.parent.parent / raw["gate_config"]).resolve()
+    gate = _load_gate_config(gate_path)
     gate_payload = {"gate": gate.as_dict()}
     payload = {
         "experiment": raw,
         "gate": gate_payload,
     }
     prepare_raw = raw["prepare"]
+    sample_protocol_config = _load_sample_protocol_config(experiment_path, raw)
     return ExperimentConfig(
         experiment_id=raw["experiment_id"],
         dataset_id=raw["dataset_id"],
         universe=raw["universe"],
         date_start=raw["date_start"],
         date_end=raw["date_end"],
+        warmup_start=str(raw.get("warmup_start", raw["date_start"])),
+        sample_protocol_id=raw.get("sample_protocol_id"),
+        sample_protocol_config=sample_protocol_config,
         adjustment=raw["adjustment"],
         forward_return_definition=raw["forward_return_definition"],
         allowed_fields=list(raw["allowed_fields"]),

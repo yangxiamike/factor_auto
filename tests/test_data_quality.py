@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from dataclasses import replace
@@ -216,6 +216,31 @@ def test_build_data_quality_report_accepts_small_calendar_boundary_gap(tmp_path:
     manifest["date_end"] = "2024-01-11"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     config = replace(config, date_end="2024-01-11")
+
+    report = build_data_quality_report(dataset_dir, config=config)
+
+    assert report.overall_outcome == PASS
+    assert _check_map(report)["date_range_consistency"].outcome == PASS
+
+
+def test_build_data_quality_report_accepts_warmup_rows_before_formal_start(tmp_path: Path) -> None:
+    dataset_dir = _build_sample_dataset_dir(tmp_path)
+    config_path = _write_test_config_files(tmp_path)
+    config = load_experiment_config(config_path)
+
+    manifest_path = dataset_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["warmup_start"] = "2024-01-02"
+    manifest["date_start"] = "2024-01-08"
+    manifest["date_end"] = "2024-01-11"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    config = replace(
+        config,
+        warmup_start="2024-01-02",
+        date_start="2024-01-08",
+        date_end="2024-01-11",
+    )
 
     report = build_data_quality_report(dataset_dir, config=config)
 
