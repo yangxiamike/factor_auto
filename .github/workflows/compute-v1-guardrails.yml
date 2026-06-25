@@ -1,0 +1,51 @@
+﻿name: compute-v1-guardrails
+
+on:
+  pull_request:
+    paths:
+      - "AGENTS.md"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "factor_autoresearch/compute_v1/**"
+      - "factor_autoresearch/evaluate.py"
+      - "tests/test_compute_v1_benchmark.py"
+      - "tests/test_compute_v1_equivalence.py"
+      - "tests/test_compute_v1_runtime_estimator.py"
+      - "docs/plans/factor-autoresearch-compute-v1-guardrails.md"
+      - "scripts/run_compute_v1_guardrails.py"
+      - ".github/workflows/compute-v1-guardrails.yml"
+  push:
+    paths:
+      - "AGENTS.md"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "factor_autoresearch/compute_v1/**"
+      - "factor_autoresearch/evaluate.py"
+      - "tests/test_compute_v1_benchmark.py"
+      - "tests/test_compute_v1_equivalence.py"
+      - "tests/test_compute_v1_runtime_estimator.py"
+      - "docs/plans/factor-autoresearch-compute-v1-guardrails.md"
+      - "scripts/run_compute_v1_guardrails.py"
+      - ".github/workflows/compute-v1-guardrails.yml"
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run compute_v1 guardrails
+        run: uv run python scripts/run_compute_v1_guardrails.py

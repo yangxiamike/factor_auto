@@ -1,0 +1,2 @@
+2026-06-24 13:44:07,527 INFO factor_autoresearch.evaluate run=compute_engine_v1_v1_serial_final_4 candidate=- stage=batch starting evaluation batch
+2026-06-24 13:44:35,695 INFO factor_autoresearch.evaluate run=compute_engine_v1_v1_serial_final_4 candidate=- stage=batch evaluation batch completed

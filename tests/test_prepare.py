@@ -1,15 +1,27 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pandas as pd
 from conftest import write_test_config_files
 
 from factor_autoresearch.config import load_experiment_config
-from factor_autoresearch.prepare import prepare_fixed_dataset
+from factor_autoresearch.prepare import _filter_universe_members, prepare_fixed_dataset
 
 
 def test_prepare_fixed_dataset_from_fake_zer0share(tmp_path) -> None:
     source_dir = tmp_path / "source"
     data_dir = source_dir / "data"
+
+    basic_dir = data_dir / "stock" / "basic"
+    basic_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "ts_code": ["000001.SZ", "000002.SZ"],
+            "exchange": ["SZSE", "SZSE"],
+            "market": ["MAIN", "MAIN"],
+        }
+    ).to_parquet(basic_dir / "data.parquet", index=False)
 
     trade_cal_dir = data_dir / "stock" / "trade_cal" / "exchange=SSE"
     trade_cal_dir.mkdir(parents=True, exist_ok=True)
@@ -23,12 +35,12 @@ def test_prepare_fixed_dataset_from_fake_zer0share(tmp_path) -> None:
     ).to_parquet(trade_cal_dir / "data.parquet", index=False)
 
     for trade_date in ["20240102", "20240103", "20240104"]:
-        universe_dir = data_dir / "stock" / "universe" / "name=fixture" / f"date={trade_date}"
+        universe_dir = data_dir / "stock" / "universe" / "name=univ_trade_zz500" / f"date={trade_date}"
         universe_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(
             {
                 "trade_date": [trade_date, trade_date],
-                "universe": ["fixture", "fixture"],
+                "universe": ["univ_trade_zz500", "univ_trade_zz500"],
                 "ts_code": ["000001.SZ", "000002.SZ"],
             }
         ).to_parquet(universe_dir / "data.parquet", index=False)
@@ -84,4 +96,38 @@ def test_prepare_fixed_dataset_from_fake_zer0share(tmp_path) -> None:
     assert (output_dir / "panel.parquet").exists()
     assert (output_dir / "forward_returns.parquet").exists()
     assert prepared.manifest["dataset_id"] == "sandbox_v1"
+    assert prepared.manifest["universe_filter"] == {
+        "include_markets": [],
+        "exclude_markets": [],
+        "include_exchanges": [],
+        "exclude_exchanges": [],
+    }
     assert {"open_hfq", "close_hfq", "industry", "market_cap"}.issubset(prepared.panel.columns)
+
+
+def test_filter_universe_members_by_market_and_exchange(test_config) -> None:
+    universe_members = pd.DataFrame(
+        {
+            "trade_date": ["20240102", "20240102", "20240102", "20240102"],
+            "ts_code": ["000001.SZ", "000002.SZ", "688001.SH", "830001.BJ"],
+        }
+    )
+    stock_basic = pd.DataFrame(
+        {
+            "ts_code": ["000001.SZ", "000002.SZ", "688001.SH", "830001.BJ"],
+            "exchange": ["SZSE", "SSE", "SSE", "BSE"],
+            "market": ["MAIN", "MAIN", "STAR", "BSE"],
+        }
+    )
+    config = replace(
+        test_config,
+        prepare=replace(
+            test_config.prepare,
+            include_markets=["MAIN"],
+            exclude_exchanges=["BSE"],
+        ),
+    )
+
+    filtered = _filter_universe_members(universe_members, stock_basic, config)
+
+    assert filtered["ts_code"].tolist() == ["000001.SZ", "000002.SZ"]

@@ -20,7 +20,7 @@ def test_data_loader_raises_on_manifest_mismatch(sample_dataset_dir, test_config
     manifest["dataset_id"] = "unexpected_dataset"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="dataset_id mismatch between manifest and config"):
+    with pytest.raises(ValueError, match="dataset manifest dataset_id does not match experiment config"):
         DataLoader(config=test_config, dataset_path=sample_dataset_dir).load()
 
 

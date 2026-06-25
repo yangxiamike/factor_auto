@@ -1,4 +1,4 @@
-"""负责读取实验与 gate 配置，并构造稳定的实验配置对象。"""
+"""Load experiment and gate configuration."""
 
 from __future__ import annotations
 
@@ -9,19 +9,16 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-# ============== 配置哈希 ==============
-
 def _hash_payload(payload: dict[str, Any]) -> str:
-    """为配置载荷生成稳定的 sha256 哈希。"""
+    """Return a stable sha256 hash for a configuration payload."""
+
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
     return f"sha256:{sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
-# ============== 配置结构 ==============
-
 @dataclass(frozen=True)
 class GateConfig:
-    """保存 gate 阶段使用的阈值与权重配置。"""
+    """Gate thresholds and scoring weights."""
 
     version: str
     coverage_mean_min: float
@@ -39,21 +36,26 @@ class GateConfig:
     components: dict[str, float]
 
     def as_dict(self) -> dict[str, Any]:
-        """转成普通字典，便于序列化和哈希。"""
+        """Return a plain dictionary suitable for hashing and persistence."""
+
         return asdict(self)
 
 
 @dataclass(frozen=True)
 class PrepareConfig:
-    """保存 prepare 阶段的预处理参数。"""
+    """Dataset preparation options."""
 
     price_start_buffer_days: int
     use_incremental_universe: bool
+    include_markets: list[str]
+    exclude_markets: list[str]
+    include_exchanges: list[str]
+    exclude_exchanges: list[str]
 
 
 @dataclass(frozen=True)
 class PreprocessConfig:
-    """保存因子预处理阶段的参数。"""
+    """Factor preprocessing options."""
 
     winsorize_mad_scale: float
     size_exposure: str
@@ -61,7 +63,7 @@ class PreprocessConfig:
 
 @dataclass(frozen=True)
 class ExperimentConfig:
-    """聚合一次实验运行所需的完整配置。"""
+    """Complete configuration for one experiment run."""
 
     experiment_id: str
     dataset_id: str
@@ -90,7 +92,8 @@ class ExperimentConfig:
     config_hash: str
 
     def as_dict(self) -> dict[str, Any]:
-        """输出适合落盘的配置字典表示。"""
+        """Return a plain dictionary suitable for artifact output."""
+
         payload = asdict(self)
         payload["source_path"] = str(self.source_path)
         payload["gate_config_path"] = str(self.gate_config_path)
@@ -99,10 +102,9 @@ class ExperimentConfig:
         return payload
 
 
-# ============== 配置读取 ==============
-
 def _load_toml(path: Path) -> dict[str, Any]:
-    """读取 TOML 文件并返回原始字典。"""
+    """Read a TOML file."""
+
     with path.open("rb") as handle:
         return tomllib.load(handle)
 
@@ -115,11 +117,14 @@ def _get_gate_threshold(
     """Read a gate threshold with fallback to the legacy field name."""
     if new_key in gate_raw:
         return float(gate_raw[new_key])
-    return float(gate_raw[legacy_key])
+    if legacy_key in gate_raw:
+        return float(gate_raw[legacy_key])
+    return 0.0
 
 
 def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
-    """从实验配置文件加载 ExperimentConfig。"""
+    """Load an experiment config and its referenced gate config."""
+
     experiment_path = Path(config_path).resolve()
     raw = _load_toml(experiment_path)
     gate_path = (experiment_path.parent.parent / raw["gate_config"]).resolve()
@@ -129,11 +134,15 @@ def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
         coverage_mean_min=float(gate_raw["coverage_mean_min"]),
         effective_trade_days_min=int(gate_raw["effective_trade_days_min"]),
         complexity_score_max=int(gate_raw["complexity_score_max"]),
-        best_horizon_directional_ic_mean_min=float(
-            gate_raw["best_horizon_directional_ic_mean_min"]
+        best_horizon_directional_ic_mean_min=_get_gate_threshold(
+            gate_raw,
+            "best_horizon_directional_ic_mean_min",
+            "best_horizon_ic_mean_min",
         ),
-        best_horizon_directional_rankic_mean_min=float(
-            gate_raw["best_horizon_directional_rankic_mean_min"]
+        best_horizon_directional_rankic_mean_min=_get_gate_threshold(
+            gate_raw,
+            "best_horizon_directional_rankic_mean_min",
+            "best_horizon_rankic_mean_min",
         ),
         best_horizon_directional_ic_positive_ratio_min=_get_gate_threshold(
             gate_raw,
@@ -145,8 +154,10 @@ def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
             "best_horizon_directional_rankic_positive_ratio_min",
             "best_horizon_rankic_positive_ratio_min",
         ),
-        best_horizon_directional_monotonicity_min=float(
-            gate_raw["best_horizon_directional_monotonicity_min"]
+        best_horizon_directional_monotonicity_min=_get_gate_threshold(
+            gate_raw,
+            "best_horizon_directional_monotonicity_min",
+            "best_horizon_monotonicity_min",
         ),
         best_horizon_score_min=float(gate_raw["best_horizon_score_min"]),
         min_cross_section_size=int(gate_raw["min_cross_section_size"]),
@@ -159,6 +170,7 @@ def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
         "experiment": raw,
         "gate": gate_payload,
     }
+    prepare_raw = raw["prepare"]
     return ExperimentConfig(
         experiment_id=raw["experiment_id"],
         dataset_id=raw["dataset_id"],
@@ -181,8 +193,12 @@ def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
         base_filters_inherited=list(raw["base_filters_inherited"]),
         gate=gate,
         prepare=PrepareConfig(
-            price_start_buffer_days=int(raw["prepare"]["price_start_buffer_days"]),
-            use_incremental_universe=bool(raw["prepare"]["use_incremental_universe"]),
+            price_start_buffer_days=int(prepare_raw["price_start_buffer_days"]),
+            use_incremental_universe=bool(prepare_raw["use_incremental_universe"]),
+            include_markets=list(prepare_raw.get("include_markets", [])),
+            exclude_markets=list(prepare_raw.get("exclude_markets", [])),
+            include_exchanges=list(prepare_raw.get("include_exchanges", [])),
+            exclude_exchanges=list(prepare_raw.get("exclude_exchanges", [])),
         ),
         preprocess=PreprocessConfig(
             winsorize_mad_scale=float(raw["preprocess"]["winsorize_mad_scale"]),

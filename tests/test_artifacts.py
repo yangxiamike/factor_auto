@@ -5,6 +5,7 @@ import json
 import pandas as pd
 
 from factor_autoresearch.artifacts import ArtifactWriter
+from factor_autoresearch.compute_v1.benchmark import EvaluationBenchmark
 from factor_autoresearch.context import EvaluationContext
 
 
@@ -69,3 +70,32 @@ def test_artifact_writer_prepares_and_writes_run_outputs(test_config, tmp_path) 
 
     summary_path = writer.write_summary("# summary\n")
     assert summary_path.read_text(encoding="utf-8") == "# summary\n"
+
+    benchmark_path = writer.write_benchmark(
+        EvaluationBenchmark(
+            engine="legacy",
+            jobs="auto",
+            candidate_count=1,
+            trade_days=8,
+            panel_rows=32,
+            universe_daily_mean=4.0,
+            total_seconds=1.2345678,
+            calculate_seconds=0.2,
+            preprocess_seconds=0.3,
+            metrics_seconds=0.4,
+            artifact_seconds=0.1,
+        )
+    )
+    assert json.loads(benchmark_path.read_text(encoding="utf-8")) == {
+        "engine": "legacy",
+        "jobs": "auto",
+        "candidate_count": 1,
+        "trade_days": 8,
+        "panel_rows": 32,
+        "universe_daily_mean": 4.0,
+        "total_seconds": 1.234568,
+        "calculate_seconds": 0.2,
+        "preprocess_seconds": 0.3,
+        "metrics_seconds": 0.4,
+        "artifact_seconds": 0.1,
+    }

@@ -1,6 +1,4 @@
-"""
-固定数据集准备模块: 从 zer0share 风格源数据构造 panel、forward returns 和落盘产物。
-"""
+"""Prepare fixed datasets from zer0share-style source data."""
 
 from __future__ import annotations
 
@@ -15,26 +13,23 @@ import pandas as pd
 from factor_autoresearch.config import ExperimentConfig
 
 
-# ============== 结果结构 ==============
 @dataclass(frozen=True)
 class PreparedDataset:
-    """准备结果: 汇总 panel、forward returns 和 manifest 三类输出。"""
+    """Prepared dataset artifacts."""
 
     panel: pd.DataFrame
     forward_returns: pd.DataFrame
     manifest: dict[str, object]
 
 
-# ============== 日期辅助函数 ==============
 def _yyyymmdd(date_text: str) -> str:
-    """日期转码: 把 YYYY-MM-DD 转成 DuckDB 查询使用的 YYYYMMDD。"""
+    """Convert YYYY-MM-DD text to YYYYMMDD text."""
 
     return date_text.replace("-", "")
 
 
-# ============== 源数据读取函数 ==============
 def _read_trade_dates(conn: duckdb.DuckDBPyConnection, data_dir: Path, config: ExperimentConfig) -> pd.DataFrame:
-    """读取交易日: 按配置区间加载上交所开市日历。"""
+    """Read open trading dates for the experiment range."""
 
     pattern = str(data_dir / "stock" / "trade_cal" / "exchange=*" / "data.parquet")
     sql = """
@@ -48,25 +43,62 @@ def _read_trade_dates(conn: duckdb.DuckDBPyConnection, data_dir: Path, config: E
     return conn.execute(sql, [pattern, _yyyymmdd(config.date_start), _yyyymmdd(config.date_end)]).fetchdf()
 
 
-def _read_universe_members(
-    conn: duckdb.DuckDBPyConnection, data_dir: Path, config: ExperimentConfig
-) -> pd.DataFrame:
-    """读取股票池: 按日期区间加载目标 universe 的成分股。"""
+def _read_universe_members(conn: duckdb.DuckDBPyConnection, data_dir: Path, config: ExperimentConfig) -> pd.DataFrame:
+    """Read source universe membership for the experiment range."""
 
-    pattern = str(
-        data_dir
-        / "stock"
-        / "universe"
-        / f"name={config.source_universe_key}"
-        / "date=*"
-        / "data.parquet"
-    )
+    pattern = str(data_dir / "stock" / "universe" / f"name={config.source_universe_key}" / "date=*" / "data.parquet")
     sql = """
         select cast(replace(cast(trade_date as varchar), '-', '') as varchar) as trade_date, ts_code
         from read_parquet(?, hive_partitioning=true)
         where cast(replace(cast(trade_date as varchar), '-', '') as varchar) between ? and ?
     """
     return conn.execute(sql, [pattern, _yyyymmdd(config.date_start), _yyyymmdd(config.date_end)]).fetchdf()
+
+
+def _read_stock_basic(conn: duckdb.DuckDBPyConnection, data_dir: Path) -> pd.DataFrame:
+    """Read stock basic metadata for prepare-time universe filtering."""
+
+    pattern = str(data_dir / "stock" / "basic" / "data.parquet")
+    sql = """
+        select ts_code, exchange, market
+        from read_parquet(?)
+    """
+    return conn.execute(sql, [pattern]).fetchdf()
+
+
+def _filter_universe_members(
+    universe_members: pd.DataFrame,
+    stock_basic: pd.DataFrame,
+    config: ExperimentConfig,
+) -> pd.DataFrame:
+    """Apply fixed market and exchange filters to universe membership."""
+
+    prepare = config.prepare
+    if not (prepare.include_markets or prepare.exclude_markets or prepare.include_exchanges or prepare.exclude_exchanges):
+        return universe_members
+
+    enriched = universe_members.merge(stock_basic, on="ts_code", how="left")
+    mask = pd.Series(True, index=enriched.index)
+    if prepare.include_markets:
+        mask &= enriched["market"].isin(prepare.include_markets)
+    if prepare.exclude_markets:
+        mask &= ~enriched["market"].isin(prepare.exclude_markets)
+    if prepare.include_exchanges:
+        mask &= enriched["exchange"].isin(prepare.include_exchanges)
+    if prepare.exclude_exchanges:
+        mask &= ~enriched["exchange"].isin(prepare.exclude_exchanges)
+    return enriched.loc[mask, ["trade_date", "ts_code"]].copy()
+
+
+def _universe_filter_manifest(config: ExperimentConfig) -> dict[str, list[str]]:
+    """Return the configured prepare-time universe filters."""
+
+    return {
+        "include_markets": config.prepare.include_markets,
+        "exclude_markets": config.prepare.exclude_markets,
+        "include_exchanges": config.prepare.include_exchanges,
+        "exclude_exchanges": config.prepare.exclude_exchanges,
+    }
 
 
 def _read_table_for_codes(
@@ -77,7 +109,7 @@ def _read_table_for_codes(
     end_date: str,
     columns: list[str],
 ) -> pd.DataFrame:
-    """读取表数据: 按股票池和日期区间过滤通用行情类 parquet 表。"""
+    """Read a parquet table filtered by registered codes and date range."""
 
     sql = f"""
         select {", ".join(columns)}
@@ -88,10 +120,8 @@ def _read_table_for_codes(
     return conn.execute(sql, [pattern, start_date, end_date]).fetchdf()
 
 
-def _read_industry_members(
-    conn: duckdb.DuckDBPyConnection, data_dir: Path, industry_source: str
-) -> pd.DataFrame:
-    """读取行业归属: 加载股票行业成员及其生效区间。"""
+def _read_industry_members(conn: duckdb.DuckDBPyConnection, data_dir: Path, industry_source: str) -> pd.DataFrame:
+    """Read industry membership intervals for the selected codes."""
 
     if industry_source.startswith("sw_"):
         pattern = str(data_dir / "stock" / "industry" / "sw_member" / "data.parquet")
@@ -112,7 +142,6 @@ def _read_industry_members(
     return conn.execute(sql, [pattern]).fetchdf()
 
 
-# ============== 数据集构造函数 ==============
 def _build_panel(
     trading_days: pd.DataFrame,
     universe_members: pd.DataFrame,
@@ -121,7 +150,7 @@ def _build_panel(
     adj_factor: pd.DataFrame,
     ci_members: pd.DataFrame,
 ) -> pd.DataFrame:
-    """构造 panel: 拼接交易网格、股票池、行情、市值和行业信息。"""
+    """Build the long-format evaluation panel."""
 
     codes = pd.DataFrame({"ts_code": sorted(universe_members["ts_code"].unique().tolist())})
     trading_days = trading_days.rename(columns={"trade_date": "trade_date_text"})
@@ -165,10 +194,7 @@ def _build_panel(
     industry_lookup = grid.merge(ci_members.copy(), on="ts_code", how="left")
     active_industry = industry_lookup[
         (industry_lookup["in_date"].isna() | (industry_lookup["trade_date"] >= industry_lookup["in_date"]))
-        & (
-            industry_lookup["out_date"].isna()
-            | (industry_lookup["trade_date"] <= industry_lookup["out_date"])
-        )
+        & (industry_lookup["out_date"].isna() | (industry_lookup["trade_date"] <= industry_lookup["out_date"]))
     ].copy()
     active_industry = active_industry.sort_values(["trade_date", "ts_code", "in_date"])
     active_industry = active_industry.drop_duplicates(["trade_date", "ts_code"], keep="last")
@@ -205,7 +231,7 @@ def _build_panel(
 
 
 def _build_forward_returns(panel: pd.DataFrame) -> pd.DataFrame:
-    """构造未来收益: 基于复权开盘价生成 1/5/20 日 forward returns。"""
+    """Build 1/5/20 day forward returns from next open to exit open."""
 
     ordered = panel.sort_values(["ts_code", "trade_date"]).copy()
     grouped = ordered.groupby("ts_code", sort=False)["open_hfq"]
@@ -217,13 +243,12 @@ def _build_forward_returns(panel: pd.DataFrame) -> pd.DataFrame:
     return result.sort_values(["trade_date", "ts_code"])
 
 
-# ============== 写出入口 ==============
 def prepare_fixed_dataset(
     *,
     config: ExperimentConfig,
     output_path: str | Path,
 ) -> PreparedDataset:
-    """准备固定数据集: 读取源数据、构造标准产物并写入数据集目录。"""
+    """Prepare and persist a fixed dataset from zer0share-style source data."""
 
     source_data_dir = (config.source_path / "data").resolve()
     if not source_data_dir.exists():
@@ -236,6 +261,8 @@ def prepare_fixed_dataset(
     try:
         trading_days = _read_trade_dates(conn, source_data_dir, config)
         universe_members = _read_universe_members(conn, source_data_dir, config)
+        stock_basic = _read_stock_basic(conn, source_data_dir)
+        universe_members = _filter_universe_members(universe_members, stock_basic, config)
         if universe_members.empty:
             raise ValueError("source universe is empty for the requested date range")
 
@@ -270,7 +297,6 @@ def prepare_fixed_dataset(
     finally:
         conn.close()
 
-    # 保持 panel 和 forward_returns 的结构不变，只整理主流程的扫读顺序。
     panel = _build_panel(trading_days, universe_members, daily_kline, daily_basic, adj_factor, ci_members)
     panel = panel.replace([np.inf, -np.inf], np.nan)
     forward_returns = _build_forward_returns(panel)
@@ -289,6 +315,7 @@ def prepare_fixed_dataset(
         "features": config.features,
         "preprocess_exposures": config.preprocess_exposures,
         "base_filters_inherited": config.base_filters_inherited,
+        "universe_filter": _universe_filter_manifest(config),
         "forward_returns": config.horizons,
         "forward_return_definition": config.forward_return_definition,
     }
@@ -309,6 +336,7 @@ def prepare_fixed_dataset(
             f"- source: {config.source}",
             f"- source_path: {config.source_path}",
             f"- source_universe_key: {config.source_universe_key}",
+            f"- universe_filter: {_universe_filter_manifest(config)}",
             f"- date_range: {config.date_start} to {config.date_end}",
             f"- adjustment: {config.adjustment}",
             f"- forward_return_definition: {config.forward_return_definition}",

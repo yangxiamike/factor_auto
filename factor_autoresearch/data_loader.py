@@ -59,10 +59,7 @@ class DataLoader:
 
         with manifest_path.open("r", encoding="utf-8") as handle:
             manifest = json.load(handle)
-        if manifest["dataset_id"] != self.config.dataset_id:
-            raise ValueError("dataset_id mismatch between manifest and config")
-        if manifest["experiment_id"] != self.config.experiment_id:
-            raise ValueError("experiment_id mismatch between manifest and config")
+        self._validate_manifest(manifest)
 
         panel = pd.read_parquet(panel_path)
         forward_returns = pd.read_parquet(forward_path)
@@ -90,3 +87,32 @@ class DataLoader:
             ["trade_date", "ts_code"]
         )
         return DatasetBundle(panel=panel, forward_returns=forward_returns, manifest=manifest)
+
+    def _validate_manifest(self, manifest: dict[str, Any]) -> None:
+        """Validate that the dataset was prepared with the active experiment contract."""
+
+        expected_filter = {
+            "include_markets": self.config.prepare.include_markets,
+            "exclude_markets": self.config.prepare.exclude_markets,
+            "include_exchanges": self.config.prepare.include_exchanges,
+            "exclude_exchanges": self.config.prepare.exclude_exchanges,
+        }
+        checks = {
+            "dataset_id": self.config.dataset_id,
+            "experiment_id": self.config.experiment_id,
+            "universe": self.config.universe,
+            "source_universe_key": self.config.source_universe_key,
+            "forward_return_definition": self.config.forward_return_definition,
+            "universe_filter": expected_filter,
+        }
+        for key, expected in checks.items():
+            actual = manifest.get(key)
+            if key == "universe_filter" and actual is None and expected == {
+                "include_markets": [],
+                "exclude_markets": [],
+                "include_exchanges": [],
+                "exclude_exchanges": [],
+            }:
+                actual = expected
+            if actual != expected:
+                raise ValueError(f"dataset manifest {key} does not match experiment config")
