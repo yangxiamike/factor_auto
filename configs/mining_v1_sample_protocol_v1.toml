@@ -1,0 +1,68 @@
+sample_protocol_id = "mining_v1"
+purpose = "严肃挖因子评价"
+split_policy = "time_ordered_oos_and_walk_forward"
+forward_return_definition = "next_open_to_open_v1"
+universe = "csi500"
+date_start = "2024-01-02"
+date_end = "2025-12-31"
+notes = "区块2 A线阶段先固化 mining_v1 窗口草案，后续 B 线再接入 config / run manifest。"
+
+[[slices]]
+slice_id = "formation"
+role = "in_sample"
+date_start = "2024-01-02"
+date_end = "2024-12-31"
+
+[[slices]]
+slice_id = "validation"
+role = "validation"
+date_start = "2025-01-02"
+date_end = "2025-06-30"
+
+[[slices]]
+slice_id = "oos"
+role = "oos"
+date_start = "2025-07-01"
+date_end = "2025-12-31"
+
+[[slices]]
+slice_id = "wf_001_formation"
+role = "walk_forward_formation"
+pair_id = "wf_001"
+date_start = "2024-01-02"
+date_end = "2024-06-28"
+
+[[slices]]
+slice_id = "wf_001_validation"
+role = "walk_forward_validation"
+pair_id = "wf_001"
+date_start = "2024-07-01"
+date_end = "2024-12-31"
+
+[[slices]]
+slice_id = "wf_002_formation"
+role = "walk_forward_formation"
+pair_id = "wf_002"
+date_start = "2024-07-01"
+date_end = "2024-12-31"
+
+[[slices]]
+slice_id = "wf_002_validation"
+role = "walk_forward_validation"
+pair_id = "wf_002"
+date_start = "2025-01-02"
+date_end = "2025-06-30"
+
+[[slices]]
+slice_id = "wf_003_formation"
+role = "walk_forward_formation"
+pair_id = "wf_003"
+date_start = "2025-01-02"
+date_end = "2025-06-30"
+
+[[slices]]
+slice_id = "wf_003_validation"
+role = "walk_forward_validation"
+pair_id = "wf_003"
+date_start = "2025-07-01"
+date_end = "2025-12-31"

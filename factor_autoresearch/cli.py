@@ -14,8 +14,10 @@ import typer
 from factor_autoresearch.cleanup import clean_experiment_outputs
 from factor_autoresearch.config import load_experiment_config
 from factor_autoresearch.context import EvaluationContext
+from factor_autoresearch.data_quality import FAIL, build_data_quality_report
 from factor_autoresearch.evaluate import Evaluator, run_static_validation
 from factor_autoresearch.prepare import prepare_fixed_dataset
+from factor_autoresearch.sample_protocol import build_sample_protocol_from_dataset
 
 # ============== Typer app 定义 ==============
 app = typer.Typer(help="Factor autoresearch sandbox CLI.")
@@ -53,6 +55,46 @@ def dataset_prepare_fixed(
             "rows": len(prepared.panel),
         }
     )
+
+
+@dataset_app.command("check-quality")
+def dataset_check_quality(
+    dataset: Annotated[Path, typer.Option(exists=True, file_okay=False)] = ...,
+    config: Annotated[Path, typer.Option(exists=True)] = DEFAULT_CONFIG,
+) -> None:
+    """检查固定数据集质量: 生成 JSON/Markdown 报告，并在合同破坏时返回非零状态。"""
+    experiment_config = load_experiment_config(config)
+    report = build_data_quality_report(dataset, config=experiment_config)
+    report_json_path = dataset / "data_quality_report.json"
+    report_markdown_path = dataset / "data_quality_report.md"
+    report_json_path.write_text(
+        json.dumps(report.as_dict(), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    report_markdown_path.write_text(report.to_markdown(), encoding="utf-8")
+    _echo_json(
+        {
+            "dataset": str(dataset),
+            "overall_outcome": report.overall_outcome,
+            "report_json": str(report_json_path),
+            "report_markdown": str(report_markdown_path),
+        }
+    )
+    if report.overall_outcome == FAIL:
+        raise typer.Exit(code=1)
+
+
+@dataset_app.command("show-slices")
+def dataset_show_slices(
+    dataset: Annotated[Path, typer.Option(exists=True, file_okay=False)] = ...,
+    sample_protocol: Annotated[str | None, typer.Option("--sample-protocol")] = None,
+) -> None:
+    """展示样本切片: 从固定 dataset 生成稳定的 sample protocol 与 slices。"""
+    protocol = build_sample_protocol_from_dataset(
+        dataset,
+        sample_protocol_id=sample_protocol,
+    )
+    _echo_json(protocol.as_dict())
 
 
 # ============== factor 命令 ==============
