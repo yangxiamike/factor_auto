@@ -1,3 +1,8 @@
+"""
+Evaluator 测试: 验证批量评估产物、摘要和 v1 benchmark 输出。
+这里关注端到端产物契约，不重复底层指标计算细节。
+"""
+
 import json
 
 import pandas as pd
@@ -7,7 +12,9 @@ from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.evaluate import Evaluator
 
 
+# ============== 测试辅助 ==============
 def _write_candidates(path):
+    """写入候选样例: 同时包含可评估和非法候选。"""
     path.write_text(
         "\n".join(
             [
@@ -45,6 +52,7 @@ def _write_candidates(path):
     )
 
 
+# ============== 评估产物 ==============
 def test_evaluator_writes_artifacts(sample_dataset_dir, tmp_path, test_config) -> None:
     candidates_path = tmp_path / "candidates.jsonl"
     _write_candidates(candidates_path)
@@ -110,6 +118,7 @@ def test_evaluator_writes_artifacts(sample_dataset_dir, tmp_path, test_config) -
     assert "diagnostics.parquet" in summary
 
 
+# ============== v1 benchmark ==============
 def test_evaluator_writes_v1_benchmark(sample_dataset_dir, tmp_path, test_config) -> None:
     candidates_path = tmp_path / "candidates.jsonl"
     candidates_path.write_text(

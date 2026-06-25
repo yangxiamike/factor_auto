@@ -1,3 +1,9 @@
+"""
+Compute v1 等价性对比模块
+负责比较 legacy 与 v1 的候选结果、metrics、IC series 和 diagnostics。
+只做测试/验收对比，不修改任何计算产物。
+"""
+
 from __future__ import annotations
 
 import math
@@ -8,8 +14,11 @@ import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
 
+# ============== 对比结果结构 ==============
 @dataclass(frozen=True)
 class CandidateResultDiff:
+    """候选差异: 描述单个候选结果字段差异。"""
+
     index: int
     candidate_id: str | None
     field: str
@@ -20,6 +29,8 @@ class CandidateResultDiff:
 
 @dataclass(frozen=True)
 class CandidateResultsComparison:
+    """候选结果对比: 汇总候选结果列表是否一致。"""
+
     matches: bool
     row_count_match: bool
     legacy_count: int
@@ -29,6 +40,8 @@ class CandidateResultsComparison:
 
 @dataclass(frozen=True)
 class SchemaComparison:
+    """Schema 对比: 记录缺失、额外和 dtype 差异。"""
+
     matches: bool
     missing_in_v1: list[str]
     extra_in_v1: list[str]
@@ -37,6 +50,8 @@ class SchemaComparison:
 
 @dataclass(frozen=True)
 class DataFrameValueDiff:
+    """表格值差异: 描述某行某列的值不一致。"""
+
     row: int
     column: str
     legacy_value: Any
@@ -46,6 +61,8 @@ class DataFrameValueDiff:
 
 @dataclass(frozen=True)
 class DataFrameComparison:
+    """表格对比: 汇总 schema、行数和值差异。"""
+
     matches: bool
     row_count_match: bool
     legacy_rows: int
@@ -56,6 +73,8 @@ class DataFrameComparison:
 
 @dataclass(frozen=True)
 class EquivalenceReport:
+    """等价报告: 汇总 legacy 与 v1 的整体对比结果。"""
+
     matches: bool
     candidate_results: CandidateResultsComparison
     metrics: DataFrameComparison
@@ -63,6 +82,9 @@ class EquivalenceReport:
     diagnostics: DataFrameComparison
 
 
+
+
+# ============== 总体对比入口 ==============
 def compare_equivalence(
     *,
     legacy_results: list[dict[str, Any]],
@@ -76,6 +98,8 @@ def compare_equivalence(
     float_tolerance: float = 1e-9,
     float_rel_tolerance: float = 1e-8,
 ) -> EquivalenceReport:
+    """总体对比: 同时比较候选结果和三类产物表。"""
+
     candidate_results = compare_candidate_results(
         legacy_results=legacy_results,
         v1_results=v1_results,
@@ -109,6 +133,9 @@ def compare_equivalence(
     )
 
 
+
+
+# ============== 候选结果对比 ==============
 def compare_candidate_results(
     *,
     legacy_results: list[dict[str, Any]],
@@ -116,6 +143,8 @@ def compare_candidate_results(
     float_tolerance: float = 1e-9,
     float_rel_tolerance: float = 1e-8,
 ) -> CandidateResultsComparison:
+    """候选结果对比: 按顺序比较每个候选的字段和值。"""
+
     diffs: list[CandidateResultDiff] = []
     legacy_count = len(legacy_results)
     v1_count = len(v1_results)
@@ -176,6 +205,9 @@ def compare_candidate_results(
     )
 
 
+
+
+# ============== 表格对比 ==============
 def compare_dataframes(
     *,
     legacy_frame: pd.DataFrame,
@@ -183,6 +215,8 @@ def compare_dataframes(
     float_tolerance: float = 1e-9,
     float_rel_tolerance: float = 1e-8,
 ) -> DataFrameComparison:
+    """表格对比: 比较 schema、行数和共同字段值。"""
+
     legacy_frame = legacy_frame.reset_index(drop=True)
     v1_frame = v1_frame.reset_index(drop=True)
 
@@ -218,6 +252,9 @@ def compare_dataframes(
     )
 
 
+
+
+# ============== 基础辅助函数 ==============
 def _compare_schema(legacy_frame: pd.DataFrame, v1_frame: pd.DataFrame) -> SchemaComparison:
     legacy_columns = list(legacy_frame.columns)
     v1_columns = list(v1_frame.columns)

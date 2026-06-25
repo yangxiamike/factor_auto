@@ -1,4 +1,8 @@
-"""Optional Numba metrics kernels for compute engine v1."""
+"""
+Compute v1 Numba kernel 模块
+提供与 NumPy backend 等价的可选加速实现。
+只在指标后端选择到 numba 时加载。
+"""
 
 from __future__ import annotations
 
@@ -8,6 +12,7 @@ from numba import njit
 from factor_autoresearch.compute_v1.metrics_kernels import MetricsBackend
 
 
+# ============== Numba 基础函数 ==============
 @njit(cache=True)
 def _pearson_corr_1d_numba(x: np.ndarray, y: np.ndarray) -> float:
     size = x.size
@@ -105,6 +110,7 @@ def _stable_sort_indices_by_values(values: np.ndarray, indices: np.ndarray) -> n
     return order
 
 
+# ============== Numba 指标 kernel ==============
 @njit(cache=True)
 def _rowwise_corr_numba(x: np.ndarray, y: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
     out = np.empty(x.shape[0], dtype=np.float64)
@@ -219,8 +225,11 @@ def _quantile_stats_numba(
     return long_short, monotonicity, bucket_count, quantile_returns
 
 
+
+
+# ============== 后端注册 ==============
 def build_numba_backend() -> MetricsBackend:
-    """Build the optional Numba backend."""
+    """后端注册: 返回 Numba 版本的指标 kernel 组。"""
 
     return MetricsBackend(
         name="numba",

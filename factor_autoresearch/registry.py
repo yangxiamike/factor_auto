@@ -7,9 +7,9 @@ from hashlib import sha256
 from pathlib import Path
 
 from factor_autoresearch.candidates import Candidate
+from factor_autoresearch.compute_legacy.metrics import MetricsResult
 from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.gate import GateDecision
-from factor_autoresearch.metrics import MetricsResult
 
 # ============== 注册表写入 ==============
 

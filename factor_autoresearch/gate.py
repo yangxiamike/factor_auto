@@ -13,8 +13,8 @@ from dataclasses import dataclass
 import pandas as pd
 
 from factor_autoresearch.candidates import Candidate
+from factor_autoresearch.compute_legacy.metrics import MetricsResult
 from factor_autoresearch.config import ExperimentConfig
-from factor_autoresearch.metrics import MetricsResult
 
 
 # ============== 判定结果结构 ==============

@@ -1,4 +1,8 @@
-"""Matrix-backed preprocess helpers aligned with the legacy implementation."""
+"""
+Compute v1 预处理模块
+负责在 date x asset 矩阵上复刻 legacy 去极值、标准化和中性化流程。
+不负责候选表达式计算和指标统计。
+"""
 
 from __future__ import annotations
 
@@ -11,17 +15,21 @@ from factor_autoresearch.compute_v1.panel import PanelStore
 from factor_autoresearch.config import ExperimentConfig
 
 
+# ============== 中性化缓存结构 ==============
 @dataclass(frozen=True)
 class NeutralizationDesign:
-    """Cached per-date design matrices for repeated neutralization."""
+    """中性化设计: 缓存逐日回归矩阵和伪逆矩阵。"""
 
     valid_masks: tuple[np.ndarray, ...]
     design_matrices: tuple[np.ndarray | None, ...]
     pseudo_inverses: tuple[np.ndarray | None, ...]
 
 
+
+
+# ============== 中性化准备 ==============
 def build_industry_matrix(industry: np.ndarray | pd.Series | pd.DataFrame, panel: PanelStore) -> np.ndarray:
-    """Normalize industry inputs into a dense date x asset matrix."""
+    """行业矩阵: 将不同输入形态对齐为 date x asset 矩阵。"""
 
     if isinstance(industry, pd.DataFrame):
         industry = industry["industry"]
@@ -39,7 +47,7 @@ def build_neutralization_design(
     panel: PanelStore,
     industry: np.ndarray | pd.Series | pd.DataFrame,
 ) -> NeutralizationDesign:
-    """Precompute reusable neutralization matrices for days with stable exposures."""
+    """中性化缓存: 预先构造可复用的逐日回归矩阵。"""
 
     industry_values = build_industry_matrix(industry, panel)
     market_cap = panel.field("market_cap")
@@ -83,8 +91,11 @@ def build_neutralization_design(
     )
 
 
+
+
+# ============== 截面预处理 ==============
 def winsorize_by_date(values: np.ndarray, universe_mask: np.ndarray, mad_scale: float) -> np.ndarray:
-    """Winsorize each date cross section inside the universe mask."""
+    """按日去极值: 仅处理股票池内有效截面。"""
 
     result = np.full_like(np.asarray(values, dtype=float), np.nan, dtype=float)
     mask = np.asarray(universe_mask, dtype=bool)
@@ -112,7 +123,7 @@ def winsorize_by_date(values: np.ndarray, universe_mask: np.ndarray, mad_scale: 
 
 
 def zscore_by_date(values: np.ndarray, universe_mask: np.ndarray) -> np.ndarray:
-    """Z-score each date cross section inside the universe mask using ddof=0."""
+    """按日标准化: 对股票池内有效截面执行 z-score。"""
 
     result = np.full_like(np.asarray(values, dtype=float), np.nan, dtype=float)
     mask = np.asarray(universe_mask, dtype=bool)
@@ -143,7 +154,7 @@ def neutralize_by_date(
     industry: np.ndarray | pd.Series | pd.DataFrame,
     design: NeutralizationDesign | None = None,
 ) -> np.ndarray:
-    """Regress out industry dummies and log market cap by date, returning residuals."""
+    """按日中性化: 回归剔除行业和市值暴露。"""
 
     result = np.full_like(np.asarray(factor_z, dtype=float), np.nan, dtype=float)
     factor_values = np.asarray(factor_z, dtype=float)
@@ -194,6 +205,9 @@ def neutralize_by_date(
     return result
 
 
+
+
+# ============== 预处理主入口 ==============
 def preprocess_factor_matrix(
     raw_factor: np.ndarray,
     panel: PanelStore,
@@ -201,7 +215,7 @@ def preprocess_factor_matrix(
     industry: np.ndarray | pd.Series | pd.DataFrame,
     neutralization_design: NeutralizationDesign | None = None,
 ) -> np.ndarray:
-    """Apply the legacy preprocess pipeline on dense matrices."""
+    """预处理矩阵: 串联去极值、标准化和中性化。"""
 
     winsorized = winsorize_by_date(raw_factor, panel.universe_mask, config.preprocess.winsorize_mad_scale)
     standardized = zscore_by_date(winsorized, panel.universe_mask)

@@ -1,4 +1,8 @@
-"""Stable tables derived from compute_v1 metrics results."""
+"""
+Compute v1 诊断表模块
+负责把 MetricsResult 展平为稳定的诊断表。
+不重新计算指标，只做展示和落盘友好的投影。
+"""
 
 from __future__ import annotations
 
@@ -6,8 +10,9 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from factor_autoresearch.metrics import MetricsResult
+from factor_autoresearch.compute_legacy.metrics import MetricsResult
 
+# ============== 字段合同 ==============
 _HORIZON_COLUMNS = [
     "candidate_id",
     "horizon",
@@ -35,20 +40,27 @@ _IC_SERIES_COLUMNS = [
 ]
 
 
+# ============== 诊断结果结构 ==============
 @dataclass(frozen=True)
 class MetricsDiagnostics:
+    """诊断结果: 包含 horizon、日度、分组和聚合四张表。"""
+
     horizon_table: pd.DataFrame
     daily_summary_table: pd.DataFrame
     quantile_table: pd.DataFrame
     aggregate_table: pd.DataFrame
 
 
+# ============== 基础辅助函数 ==============
 def _empty_frame(columns: list[str]) -> pd.DataFrame:
     return pd.DataFrame(columns=columns)
 
 
+
+
+# ============== 诊断表构建 ==============
 def build_metrics_diagnostics(metrics_result: MetricsResult) -> MetricsDiagnostics:
-    """Project metrics results into deterministic tables for reporting/debugging."""
+    """诊断表构建: 将指标结果投影为确定性表结构。"""
 
     horizon_rows = metrics_result.horizon_rows.copy()
     ic_series = metrics_result.ic_series.copy()

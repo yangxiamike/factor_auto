@@ -1,17 +1,22 @@
-"""Matrix-backed candidate metrics aligned with the legacy metrics schema."""
+"""
+Compute v1 指标模块
+负责在稠密矩阵上计算 IC、RankIC、分组收益和聚合指标。
+输出字段必须与 compute_legacy.metrics 保持一致。
+"""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
+from factor_autoresearch.compute_legacy.metrics import MetricsResult
 from factor_autoresearch.compute_v1.metrics_kernels import resolve_metrics_backend
 from factor_autoresearch.compute_v1.panel import PanelStore
 from factor_autoresearch.config import ExperimentConfig
 from factor_autoresearch.data_loader import DatasetBundle
-from factor_autoresearch.metrics import MetricsResult
 
 
+# ============== 矩阵转换 ==============
 def _series_to_matrix(series: pd.Series, store: PanelStore) -> np.ndarray:
     aligned = series.reindex(store.long_index)
     return aligned.to_numpy(dtype=float).reshape(len(store.date_index), len(store.asset_index))
@@ -28,6 +33,9 @@ def _frame_to_cube(
         for column in columns
     ]
     return np.stack(arrays, axis=0)
+
+
+# ============== 基础辅助函数 ==============
 def _nanmean_or_nan(values: np.ndarray | pd.Series) -> float:
     array = np.asarray(values, dtype=float)
     if array.size == 0 or np.isnan(array).all():
@@ -35,18 +43,24 @@ def _nanmean_or_nan(values: np.ndarray | pd.Series) -> float:
     return float(np.nanmean(array))
 
 
+
+
+# ============== 收益矩阵 ==============
 def build_returns_cube(
     dataset: DatasetBundle,
     config: ExperimentConfig,
     store: PanelStore | None = None,
 ) -> tuple[PanelStore, np.ndarray]:
-    """Build the shared returns cube used by compute_v1 metrics."""
+    """收益矩阵: 构造所有 horizon 共享的 forward return cube。"""
 
     panel_store = store or PanelStore.from_dataset(dataset)
     horizon_columns = [f"fwd_ret_{horizon}" for horizon in config.horizons]
     return panel_store, _frame_to_cube(dataset.forward_returns, horizon_columns, panel_store)
 
 
+
+
+# ============== 指标计算 ==============
 def compute_candidate_metrics_from_matrix(
     *,
     candidate_id: str,
@@ -58,7 +72,7 @@ def compute_candidate_metrics_from_matrix(
     expected_direction: str = "positive",
     backend: str = "auto",
 ) -> MetricsResult:
-    """Compute metrics using already-prepared dense matrices."""
+    """矩阵指标: 基于已准备好的因子矩阵和收益 cube 计算指标。"""
 
     backend_impl = resolve_metrics_backend(backend)
     direction_sign = 1.0 if expected_direction == "positive" else -1.0
@@ -196,7 +210,7 @@ def compute_candidate_metrics(
     expected_direction: str = "positive",
     backend: str = "auto",
 ) -> MetricsResult:
-    """Compute daily and aggregate metrics for all configured horizons in one pass."""
+    """兼容指标: 把 legacy 长表因子转矩阵后计算指标。"""
 
     store, returns_cube = build_returns_cube(dataset, config)
     factor_matrix = _series_to_matrix(factor, store)

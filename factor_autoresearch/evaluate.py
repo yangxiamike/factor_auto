@@ -17,8 +17,11 @@ import pandas as pd
 
 from factor_autoresearch import __version__
 from factor_autoresearch.artifacts import ArtifactWriter
-from factor_autoresearch.calculator import ExpressionValidationError, FactorCalc
 from factor_autoresearch.candidates import Candidate, InvalidCandidateRecord, load_candidate_batch
+from factor_autoresearch.compute_legacy.calculator import FactorCalc
+from factor_autoresearch.compute_legacy.metrics import MetricsResult
+from factor_autoresearch.compute_legacy.metrics import compute_candidate_metrics as compute_legacy_metrics
+from factor_autoresearch.compute_legacy.preprocess import preprocess_factor as preprocess_factor_legacy
 from factor_autoresearch.compute_v1.calculator import V1FactorCalc
 from factor_autoresearch.compute_v1.diagnostics import build_metrics_diagnostics
 from factor_autoresearch.compute_v1.metrics import (
@@ -39,11 +42,9 @@ from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.data_loader import DataLoader, DatasetBundle
 from factor_autoresearch.diagnostics import build_candidate_diagnostics
 from factor_autoresearch.engine.parallel import run_ordered
+from factor_autoresearch.expression import ExpressionValidationError
 from factor_autoresearch.gate import GateDecision, apply_candidate_gate
 from factor_autoresearch.logging_config import configure_logging
-from factor_autoresearch.metrics import MetricsResult
-from factor_autoresearch.metrics import compute_candidate_metrics as compute_legacy_metrics
-from factor_autoresearch.preprocess import preprocess_factor as preprocess_factor_legacy
 from factor_autoresearch.registry import RegistryWriter
 
 LOGGER = logging.getLogger(__name__)

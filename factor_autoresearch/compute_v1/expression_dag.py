@@ -1,12 +1,17 @@
-"""Canonical expression keys for compute engine v1 cache reuse."""
+"""
+Compute v1 表达式 key 模块
+负责把 AST 子树转成稳定缓存 key。
+key 不包含候选 id，因此相同子表达式可跨候选复用。
+"""
 
 from __future__ import annotations
 
 import ast
 
 
+# ============== 表达式缓存 key ==============
 def expression_key(node: ast.AST) -> tuple:
-    """Build a stable cache key from an AST node without candidate identity."""
+    """表达式 key: 从 AST 节点生成稳定缓存键。"""
     if isinstance(node, ast.Name):
         return ("field", node.id)
     if isinstance(node, ast.Constant):
