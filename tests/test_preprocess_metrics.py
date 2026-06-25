@@ -27,6 +27,7 @@ def test_preprocess_and_metrics(sample_dataset_dir, test_config) -> None:
         dataset=dataset,
         config=test_config,
         complexity_score=calc.complexity_score(candidate),
+        expected_direction=candidate.expected_direction,
     )
     assert metrics.aggregate["coverage_mean"] > 0
     assert not metrics.horizon_rows.empty

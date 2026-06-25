@@ -1,0 +1,2 @@
+2026-06-25 11:39:27,948 INFO factor_autoresearch.evaluate run=mainboard_pressure_v1_auto_decision_report candidate=- stage=batch starting evaluation batch
+2026-06-25 11:40:19,304 INFO factor_autoresearch.evaluate run=mainboard_pressure_v1_auto_decision_report candidate=- stage=batch evaluation batch completed

@@ -145,3 +145,11 @@ def test_cli_dataset_show_slices_outputs_protocol(sample_dataset_dir) -> None:
     assert payload["sample_protocol_id"] == "mining_v1"
     assert payload["sample_protocol_hash"].startswith("sha256:")
     assert payload["slices"][0]["slice_id"] == "formation"
+
+
+def test_cli_evaluate_exposes_engine_and_jobs_options() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["factor", "evaluate", "--help"])
+    assert result.exit_code == 0
+    assert "--engine" in result.stdout
+    assert "--jobs" in result.stdout

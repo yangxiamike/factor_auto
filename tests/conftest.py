@@ -61,13 +61,19 @@ def build_sample_dataset_dir(base_dir: Path) -> Path:
         "source": "fixture",
         "source_path": str(base_dir),
         "universe": "csi500",
-        "source_universe_key": "fixture",
+        "source_universe_key": "univ_trade_zz500",
         "date_start": "2024-01-01",
         "date_end": "2025-12-31",
         "adjustment": "hfq",
         "features": ["open_hfq", "high_hfq", "low_hfq", "close_hfq", "volume"],
         "preprocess_exposures": ["industry", "market_cap"],
         "base_filters_inherited": [],
+        "universe_filter": {
+            "include_markets": [],
+            "exclude_markets": [],
+            "include_exchanges": [],
+            "exclude_exchanges": [],
+        },
         "forward_returns": ["1d", "5d", "20d"],
         "forward_return_definition": "next_open_to_open_v1",
     }
@@ -83,8 +89,14 @@ def build_test_config() -> object:
         coverage_mean_min=0.5,
         effective_trade_days_min=3,
         complexity_score_max=20,
-        best_horizon_score_min=0.1,
+        best_horizon_directional_ic_mean_min=0.0,
+        best_horizon_directional_rankic_mean_min=0.0,
+        best_horizon_directional_ic_positive_ratio_min=0.0,
+        best_horizon_directional_rankic_positive_ratio_min=0.0,
+        best_horizon_directional_monotonicity_min=-1.0,
+        best_horizon_score_min=0.0,
         min_cross_section_size=2,
+        quantiles=4,
     )
     return replace(config, gate=gate)
 
@@ -92,15 +104,20 @@ def build_test_config() -> object:
 def write_test_config_files(base_dir: Path) -> Path:
     config_dir = base_dir / "configs"
     config_dir.mkdir(parents=True, exist_ok=True)
-    gate_path = config_dir / "candidate_gate_v1.toml"
+    gate_path = config_dir / "candidate_gate_baseline_v0.toml"
     gate_path.write_text(
         "\n".join(
             [
                 "[gate]",
-                'version = "candidate_gate_v1"',
+                'version = "candidate_gate_baseline_v0"',
                 "coverage_mean_min = 0.5",
                 "effective_trade_days_min = 3",
                 "complexity_score_max = 20",
+                "best_horizon_directional_ic_mean_min = 0.0",
+                "best_horizon_directional_rankic_mean_min = 0.0",
+                "best_horizon_directional_ic_positive_ratio_min = 0.0",
+                "best_horizon_directional_rankic_positive_ratio_min = 0.0",
+                "best_horizon_directional_monotonicity_min = -1.0",
                 "best_horizon_score_min = 0.1",
                 "min_cross_section_size = 2",
                 "quantiles = 4",
@@ -144,10 +161,10 @@ def write_test_config_files(base_dir: Path) -> Path:
                 'preprocess_exposures = ["industry", "market_cap"]',
                 'source = "fixture"',
                 f'source_path = "{base_dir.as_posix()}"',
-                'source_universe_key = "fixture"',
+                'source_universe_key = "univ_trade_zz500"',
                 'industry_source = "ci_l1_name"',
                 "base_filters_inherited = []",
-                'gate_config = "configs/candidate_gate_v1.toml"',
+                'gate_config = "configs/candidate_gate_baseline_v0.toml"',
                 "",
                 "[prepare]",
                 "price_start_buffer_days = 30",

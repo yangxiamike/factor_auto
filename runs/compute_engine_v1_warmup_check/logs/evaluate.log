@@ -1,0 +1,2 @@
+2026-06-25 10:36:19,510 INFO factor_autoresearch.evaluate run=compute_engine_v1_warmup_check candidate=- stage=batch starting evaluation batch
+2026-06-25 10:36:29,309 INFO factor_autoresearch.evaluate run=compute_engine_v1_warmup_check candidate=- stage=batch evaluation batch completed

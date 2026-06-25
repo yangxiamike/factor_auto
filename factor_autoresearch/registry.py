@@ -11,7 +11,6 @@ from factor_autoresearch.context import EvaluationContext
 from factor_autoresearch.gate import GateDecision
 from factor_autoresearch.metrics import MetricsResult
 
-
 # ============== 注册表写入 ==============
 
 class RegistryWriter:
@@ -20,6 +19,7 @@ class RegistryWriter:
     def __init__(self, path: str | Path) -> None:
         """记录注册表文件路径。"""
         self.path = Path(path)
+        self._existing_keys_cache: set[tuple[str, str, str]] | None = None
 
     def append_passed(
         self,
@@ -75,14 +75,18 @@ class RegistryWriter:
         }
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        self._existing_keys().add(dedupe_key)
         return True
 
     # ============== 去重读取 ==============
 
     def _existing_keys(self) -> set[tuple[str, str, str]]:
         """读取已有记录的去重键集合。"""
+        if self._existing_keys_cache is not None:
+            return self._existing_keys_cache
         if not self.path.exists():
-            return set()
+            self._existing_keys_cache = set()
+            return self._existing_keys_cache
         existing: set[tuple[str, str, str]] = set()
         with self.path.open("r", encoding="utf-8") as handle:
             for line in handle:
@@ -91,4 +95,5 @@ class RegistryWriter:
                     continue
                 raw = json.loads(text)
                 existing.add((raw["factor_id"], raw["dataset_id"], raw["run_id"]))
-        return existing
+        self._existing_keys_cache = existing
+        return self._existing_keys_cache

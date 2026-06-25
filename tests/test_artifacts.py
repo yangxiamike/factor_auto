@@ -5,6 +5,7 @@ import json
 import pandas as pd
 
 from factor_autoresearch.artifacts import ArtifactWriter
+from factor_autoresearch.compute_v1.benchmark import EvaluationBenchmark
 from factor_autoresearch.context import EvaluationContext
 
 
@@ -44,11 +45,57 @@ def test_artifact_writer_prepares_and_writes_run_outputs(test_config, tmp_path) 
     results = [{"id": "fa_demo", "status": "candidate_pass"}]
     metrics_frame = pd.DataFrame([{"candidate_id": "fa_demo", "horizon": "1d", "rankic_mean": 0.2}])
     ic_series_frame = pd.DataFrame([{"candidate_id": "fa_demo", "trade_date": "2024-01-02", "horizon": "1d"}])
-    paths = writer.write_results(results, metrics_frame, ic_series_frame)
+    diagnostics_frame = pd.DataFrame(
+        [
+            {
+                "candidate_id": "fa_demo",
+                "slice_type": "year",
+                "slice_value": "2024",
+                "horizon": "1d",
+                "ic_mean": 0.1,
+                "rankic_mean": 0.2,
+                "ic_positive_ratio": 1.0,
+                "rankic_positive_ratio": 1.0,
+                "coverage_mean": 0.8,
+                "effective_trade_days": 1,
+            }
+        ]
+    )
+    paths = writer.write_results(results, metrics_frame, ic_series_frame, diagnostics_frame)
     assert paths["results"].exists()
     assert paths["metrics"].exists()
     assert paths["ic_series"].exists()
+    assert paths["diagnostics"].exists()
     assert json.loads(paths["results"].read_text(encoding="utf-8").strip())["id"] == "fa_demo"
 
     summary_path = writer.write_summary("# summary\n")
     assert summary_path.read_text(encoding="utf-8") == "# summary\n"
+
+    benchmark_path = writer.write_benchmark(
+        EvaluationBenchmark(
+            engine="legacy",
+            jobs="auto",
+            candidate_count=1,
+            trade_days=8,
+            panel_rows=32,
+            universe_daily_mean=4.0,
+            total_seconds=1.2345678,
+            calculate_seconds=0.2,
+            preprocess_seconds=0.3,
+            metrics_seconds=0.4,
+            artifact_seconds=0.1,
+        )
+    )
+    assert json.loads(benchmark_path.read_text(encoding="utf-8")) == {
+        "engine": "legacy",
+        "jobs": "auto",
+        "candidate_count": 1,
+        "trade_days": 8,
+        "panel_rows": 32,
+        "universe_daily_mean": 4.0,
+        "total_seconds": 1.234568,
+        "calculate_seconds": 0.2,
+        "preprocess_seconds": 0.3,
+        "metrics_seconds": 0.4,
+        "artifact_seconds": 0.1,
+    }

@@ -1,0 +1,15 @@
+flowchart TD
+    A["当前 sandbox<br/>能跑的因子评价毛坯"] --> B["区块一<br/>计算与评价引擎"]
+    B --> C["区块二<br/>数据与样本协议"]
+    C --> D["区块三<br/>因子验收与稳健性 gate"]
+    D --> E["区块四<br/>因子资产库"]
+    E --> F["区块五<br/>Agent 挖掘闭环"]
+    F --> G["可上线挖因子的 A 股系统"]
+
+    B1["PanelStore 矩阵面板<br/>DAG/cache 复用计算<br/>kernels 高速算子<br/>并行计算<br/>legacy 等价验证"] --> B
+    C1["股票池协议<br/>PIT 当时可见数据<br/>forward return 未来收益定义<br/>OOS 样本外窗口<br/>walk-forward 滚动验证"] --> C
+    D1["gate 升级<br/>OOS 检查<br/>walk-forward 稳定性<br/>相关性去重<br/>残差增量检验<br/>换手/成本代理"] --> D
+    E1["registry 注册表<br/>watchlist 观察名单<br/>accepted 已验收因子<br/>版本和 lineage 来源链路<br/>退役记录"] --> E
+    F1["生成候选<br/>运行批次<br/>总结证据<br/>更新研究笔记<br/>提出 memory 更新"] --> F
+
+    G --> H["不等于实盘交易<br/>不包含下单执行<br/>不包含组合生产"]
