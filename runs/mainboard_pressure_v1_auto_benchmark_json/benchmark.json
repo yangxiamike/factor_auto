@@ -1,0 +1,13 @@
+{
+  "engine": "v1",
+  "jobs": "auto",
+  "candidate_count": 30,
+  "trade_days": 485,
+  "panel_rows": 1543755,
+  "universe_daily_mean": 2878.484536,
+  "total_seconds": 61.935179,
+  "calculate_seconds": 3.259368,
+  "preprocess_seconds": 24.56006,
+  "metrics_seconds": 23.190963,
+  "artifact_seconds": 6.773243
+}
