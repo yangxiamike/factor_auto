@@ -172,6 +172,79 @@ def _check_map(report) -> dict[str, object]:
     return {check.check_id: check for check in report.checks}
 
 
+def _build_daily_universe_dataset(
+    base_dir: Path,
+    *,
+    daily_counts: list[int],
+    date_start: str | None = None,
+    date_end: str | None = None,
+) -> tuple[Path, object]:
+    dataset_dir = base_dir / "dataset"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+
+    trade_dates = pd.date_range("2024-01-02", periods=len(daily_counts), freq="B")
+    max_count = max(daily_counts) if daily_counts else 0
+    rows: list[dict[str, object]] = []
+    forward_rows: list[dict[str, object]] = []
+    for trade_date, in_universe_count in zip(trade_dates, daily_counts, strict=True):
+        for stock_idx in range(max_count):
+            ts_code = f"{stock_idx + 1:06d}.SZ"
+            rows.append(
+                {
+                    "trade_date": trade_date,
+                    "ts_code": ts_code,
+                    "in_universe": stock_idx < in_universe_count,
+                    "industry": "IND_A",
+                    "market_cap": 1000.0,
+                    "open_hfq": 10.0 + stock_idx,
+                    "high_hfq": 10.5 + stock_idx,
+                    "low_hfq": 9.5 + stock_idx,
+                    "close_hfq": 10.1 + stock_idx,
+                    "volume": 10000.0,
+                }
+            )
+            forward_rows.append(
+                {
+                    "trade_date": trade_date,
+                    "ts_code": ts_code,
+                    "fwd_ret_1d": 0.001,
+                    "fwd_ret_5d": 0.002,
+                    "fwd_ret_20d": 0.003,
+                }
+            )
+    pd.DataFrame(rows).to_parquet(dataset_dir / "panel.parquet", index=False)
+    pd.DataFrame(forward_rows).to_parquet(dataset_dir / "forward_returns.parquet", index=False)
+
+    manifest_start = date_start or trade_dates.min().strftime("%Y-%m-%d")
+    manifest_end = date_end or trade_dates.max().strftime("%Y-%m-%d")
+    manifest = {
+        "dataset_id": "sandbox_v1",
+        "experiment_id": "csi500_ohlcv_sandbox_v1",
+        "created_at": "2026-06-22",
+        "source": "fixture",
+        "source_path": str(base_dir),
+        "universe": "csi500",
+        "source_universe_key": "fixture",
+        "date_start": manifest_start,
+        "date_end": manifest_end,
+        "adjustment": "hfq",
+        "features": ["open_hfq", "high_hfq", "low_hfq", "close_hfq", "volume"],
+        "preprocess_exposures": ["industry", "market_cap"],
+        "base_filters_inherited": [],
+        "forward_returns": ["1d", "5d", "20d"],
+        "forward_return_definition": "next_open_to_open_v1",
+    }
+    (dataset_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    config_path = _write_test_config_files(base_dir)
+    config = load_experiment_config(config_path)
+    aligned_config = replace(
+        config,
+        date_start=manifest_start,
+        date_end=manifest_end,
+    )
+    return dataset_dir, aligned_config
+
 def test_build_data_quality_report_passes_for_aligned_fixture(tmp_path: Path) -> None:
     dataset_dir, config = _build_aligned_dataset_and_config(tmp_path)
 
@@ -316,12 +389,12 @@ def test_build_data_quality_report_warns_on_statistical_anomalies(tmp_path: Path
     checks = _check_map(report)
 
     assert report.overall_outcome == WARNING
-    assert checks["daily_universe_counts"].outcome == WARNING
+    assert checks["daily_universe_counts"].outcome == PASS
     assert checks["ohlcv_missing_rates"].outcome == WARNING
     assert checks["exposure_missing_rates"].outcome == WARNING
     assert checks["forward_return_coverage"].outcome == WARNING
     assert checks["market_cap_nonpositive_rate"].outcome == WARNING
-    assert report.metrics["daily_universe"]["dates_below_threshold"] == ["2024-01-04"]
+    assert report.metrics["daily_universe"]["dates_below_threshold"] == []
     assert report.metrics["missing_rates"]["ohlcv"]["open_hfq"] > 0.05
     assert (
         report.metrics["forward_return_coverage"]["by_horizon"]["fwd_ret_5d"][
@@ -332,7 +405,7 @@ def test_build_data_quality_report_warns_on_statistical_anomalies(tmp_path: Path
     assert report.metrics["market_cap_nonpositive"]["nonpositive_count"] == 1
 
 
-def test_build_data_quality_report_warns_when_a_trade_date_has_zero_universe_rows(tmp_path: Path) -> None:
+def test_build_data_quality_report_fails_when_a_formal_trade_date_has_zero_universe_rows(tmp_path: Path) -> None:
     dataset_dir, config = _build_aligned_dataset_and_config(tmp_path)
     panel = pd.read_parquet(dataset_dir / "panel.parquet")
 
@@ -343,6 +416,43 @@ def test_build_data_quality_report_warns_when_a_trade_date_has_zero_universe_row
     report = build_data_quality_report(dataset_dir, config=config)
     daily_universe_check = _check_map(report)["daily_universe_counts"]
 
-    assert daily_universe_check.outcome == WARNING
-    assert report.metrics["daily_universe"]["dates_below_threshold"] == ["2024-01-04"]
+    assert daily_universe_check.outcome == FAIL
+    assert report.metrics["daily_universe"]["hard_fail"]["formal_zero_dates"] == ["2024-01-04"]
     assert report.metrics["daily_universe"]["min"] == 0
+
+
+def test_daily_universe_counts_accepts_long_term_universe_growth(tmp_path: Path) -> None:
+    daily_counts = [30] * 40 + [45] * 40 + [60] * 40 + [80] * 40
+    dataset_dir, config = _build_daily_universe_dataset(tmp_path, daily_counts=daily_counts)
+
+    report = build_data_quality_report(dataset_dir, config=config)
+    daily_universe = report.metrics["daily_universe"]
+
+    assert _check_map(report)["daily_universe_counts"].outcome == PASS
+    assert daily_universe["rolling_warning"]["warning_dates"] == []
+    assert daily_universe["profile"]["by_year"]["2024"]["min"] == 30
+
+
+def test_daily_universe_counts_warns_on_rolling_drop(tmp_path: Path) -> None:
+    daily_counts = [80] * 40 + [20] + [80] * 20
+    dataset_dir, config = _build_daily_universe_dataset(tmp_path, daily_counts=daily_counts)
+
+    report = build_data_quality_report(dataset_dir, config=config)
+    daily_universe = report.metrics["daily_universe"]
+
+    assert _check_map(report)["daily_universe_counts"].outcome == WARNING
+    assert daily_universe["rolling_warning"]["warning_dates"] == ["2024-02-27"]
+    assert daily_universe["dates_below_threshold"] == ["2024-02-27"]
+
+
+def test_daily_universe_counts_fails_on_formal_window_zero_count(tmp_path: Path) -> None:
+    daily_counts = [80] * 25 + [0] + [80] * 10
+    dataset_dir, config = _build_daily_universe_dataset(tmp_path, daily_counts=daily_counts)
+
+    report = build_data_quality_report(dataset_dir, config=config)
+    daily_universe = report.metrics["daily_universe"]
+
+    assert report.overall_outcome == FAIL
+    assert _check_map(report)["daily_universe_counts"].outcome == FAIL
+    assert daily_universe["hard_fail"]["formal_zero_dates"] == ["2024-02-06"]
+

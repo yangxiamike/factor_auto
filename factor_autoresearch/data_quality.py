@@ -38,6 +38,8 @@ class DataQualityOptions:
     """Thresholds for non-blocking statistical warnings."""
 
     universe_low_count_ratio: float = 0.8
+    universe_rolling_window_days: int = 126
+    universe_rolling_min_periods: int = 20
     missing_rate_warning: float = 0.05
     forward_non_tail_missing_rate_warning: float = 0.02
     market_cap_nonpositive_warning: float = 0.0
@@ -188,7 +190,14 @@ def build_data_quality_report(
         and panel_primary_key_ok
         and forward_primary_key_ok
     ):
-        _collect_daily_universe_metrics(prepared_panel, resolved_options, checks, metrics)
+        _collect_daily_universe_metrics(
+            prepared_panel,
+            resolved_options,
+            checks,
+            metrics,
+            manifest=manifest,
+            config=config,
+        )
         _collect_missing_rate_metrics(prepared_panel, resolved_options, checks, metrics)
         _collect_forward_return_metrics(
             prepared_panel, prepared_forward, resolved_options, checks, metrics
@@ -505,44 +514,73 @@ def _collect_daily_universe_metrics(
     options: DataQualityOptions,
     checks: list[DataQualityCheckResult],
     metrics: dict[str, Any],
+    *,
+    manifest: dict[str, Any] | None,
+    config: ExperimentConfig | None,
 ) -> None:
     all_trade_dates = panel["trade_date"].drop_duplicates().sort_values()
     universe_panel = panel.loc[_universe_mask(panel)]
     daily_counts = universe_panel.groupby("trade_date").size().reindex(all_trade_dates, fill_value=0)
     if daily_counts.empty:
-        metrics["daily_universe"] = {
-            "min": 0,
-            "max": 0,
-            "mean": 0.0,
-            "median": 0.0,
-            "dates_below_threshold": [],
-        }
+        metrics["daily_universe"] = _empty_daily_universe_metrics(options)
         checks.append(
             DataQualityCheckResult(
                 check_id="daily_universe_counts",
-                outcome=WARNING,
+                outcome=FAIL,
                 message="dataset contains no in-universe rows",
                 details=metrics["daily_universe"],
             )
         )
         return
 
-    threshold = float(daily_counts.median()) * options.universe_low_count_ratio
-    low_dates = [date.strftime("%Y-%m-%d") for date in daily_counts[daily_counts < threshold].index]
+    formal_mask = _formal_window_mask(daily_counts.index, manifest, config)
+    formal_zero_dates = _format_dates(daily_counts.loc[formal_mask & daily_counts.eq(0)].index)
+    rolling_baseline = daily_counts.shift(1).rolling(
+        window=options.universe_rolling_window_days,
+        min_periods=options.universe_rolling_min_periods,
+    ).median()
+    rolling_threshold = rolling_baseline * options.universe_low_count_ratio
+    rolling_warning_mask = rolling_baseline.notna() & daily_counts.lt(rolling_threshold)
+    rolling_warning_dates = _format_dates(daily_counts.loc[rolling_warning_mask].index)
+
     metrics["daily_universe"] = {
         "min": int(daily_counts.min()),
         "max": int(daily_counts.max()),
         "mean": float(daily_counts.mean()),
         "median": float(daily_counts.median()),
-        "threshold": threshold,
-        "dates_below_threshold": low_dates,
+        "threshold": None,
+        "dates_below_threshold": rolling_warning_dates,
+        "hard_fail": {
+            "formal_zero_dates": formal_zero_dates,
+            "formal_zero_count": len(formal_zero_dates),
+        },
+        "rolling_warning": {
+            "window": options.universe_rolling_window_days,
+            "min_periods": options.universe_rolling_min_periods,
+            "low_count_ratio": options.universe_low_count_ratio,
+            "warning_dates": rolling_warning_dates,
+            "warning_count": len(rolling_warning_dates),
+        },
+        "profile": {
+            "by_year": _daily_count_profile_by_year(daily_counts),
+        },
     }
-    if low_dates:
+    if formal_zero_dates:
+        checks.append(
+            DataQualityCheckResult(
+                check_id="daily_universe_counts",
+                outcome=FAIL,
+                message="formal window contains dates with zero in-universe rows",
+                details=metrics["daily_universe"],
+            )
+        )
+        return
+    if rolling_warning_dates:
         checks.append(
             DataQualityCheckResult(
                 check_id="daily_universe_counts",
                 outcome=WARNING,
-                message="daily universe counts fall below the warning threshold on some dates",
+                message="daily universe counts fall below the rolling warning threshold",
                 details=metrics["daily_universe"],
             )
         )
@@ -551,11 +589,84 @@ def _collect_daily_universe_metrics(
         DataQualityCheckResult(
             check_id="daily_universe_counts",
             outcome=PASS,
-            message="daily universe counts are stable within the warning threshold",
+            message="daily universe counts are stable within the rolling warning threshold",
             details=metrics["daily_universe"],
         )
     )
 
+
+def _empty_daily_universe_metrics(options: DataQualityOptions) -> dict[str, Any]:
+    return {
+        "min": 0,
+        "max": 0,
+        "mean": 0.0,
+        "median": 0.0,
+        "threshold": None,
+        "dates_below_threshold": [],
+        "hard_fail": {"formal_zero_dates": [], "formal_zero_count": 0},
+        "rolling_warning": {
+            "window": options.universe_rolling_window_days,
+            "min_periods": options.universe_rolling_min_periods,
+            "low_count_ratio": options.universe_low_count_ratio,
+            "warning_dates": [],
+            "warning_count": 0,
+        },
+        "profile": {"by_year": {}},
+    }
+
+
+def _formal_window_mask(
+    dates: pd.Series | pd.Index,
+    manifest: dict[str, Any] | None,
+    config: ExperimentConfig | None,
+) -> pd.Series:
+    start = _formal_start(manifest, config)
+    end = _formal_end(manifest, config)
+    index = pd.DatetimeIndex(dates)
+    mask = pd.Series(True, index=index)
+    if start is not None:
+        mask &= index >= start
+    if end is not None:
+        mask &= index <= end
+    return mask
+
+
+def _formal_start(
+    manifest: dict[str, Any] | None,
+    config: ExperimentConfig | None,
+) -> pd.Timestamp | None:
+    if manifest is not None and manifest.get("date_start") is not None:
+        return _parse_date_value(manifest.get("date_start"))
+    if config is not None:
+        return _parse_date_value(config.date_start)
+    return None
+
+
+def _formal_end(
+    manifest: dict[str, Any] | None,
+    config: ExperimentConfig | None,
+) -> pd.Timestamp | None:
+    if manifest is not None and manifest.get("date_end") is not None:
+        return _parse_date_value(manifest.get("date_end"))
+    if config is not None:
+        return _parse_date_value(config.date_end)
+    return None
+
+
+def _format_dates(dates: pd.Series | pd.Index) -> list[str]:
+    return [date.strftime("%Y-%m-%d") for date in pd.DatetimeIndex(dates)]
+
+
+def _daily_count_profile_by_year(daily_counts: pd.Series) -> dict[str, dict[str, float | int]]:
+    profile: dict[str, dict[str, float | int]] = {}
+    for year, values in daily_counts.groupby(daily_counts.index.year):
+        profile[str(year)] = {
+            "min": int(values.min()),
+            "max": int(values.max()),
+            "mean": float(values.mean()),
+            "median": float(values.median()),
+        }
+    return profile
 
 def _collect_missing_rate_metrics(
     panel: pd.DataFrame,
@@ -805,3 +916,5 @@ def _overall_outcome(checks: list[DataQualityCheckResult]) -> CheckOutcome:
     if any(check.outcome == WARNING for check in checks):
         return WARNING
     return PASS
+
+
