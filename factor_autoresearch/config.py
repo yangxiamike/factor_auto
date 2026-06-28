@@ -1,4 +1,4 @@
-"""Load experiment and gate configuration."""
+﻿"""Load experiment and gate configuration."""
 
 from __future__ import annotations
 
@@ -108,11 +108,52 @@ class ExperimentConfig:
         return payload
 
 
+@dataclass(frozen=True)
+class Block3ScreeningConfig:
+    """Block3 screening 配置: 描述 Gate0-Gate3 的筛选阈值与样本口径。"""
+
+    version: str
+    screening_gate_profile: str
+    admission_horizon: str
+    metric_compute_policy: str
+    screening_sample_roles: list[str]
+    expression_depth_max: int
+    coverage_mean_min: float
+    effective_trade_days_min: int
+    min_cross_section_size: int
+    finite_ratio_min: float
+    std_min: float
+    unique_ratio_min: float
+    quantiles: int
+    admission_quality_metric: str
+    admission_quality_min: float
+    admission_stability_metric: str
+    admission_stability_min: float
+    batch_corr_threshold: float
+    library_corr_threshold: float
+    correlation_min_overlap: int
+    tie_break_order: list[str]
+    replacement_quality_metric: str
+    replacement_absolute_quality_min: float
+    replacement_improvement_ratio_min: float
+    correlated_factor_count_required: int
+    directional_long_short_sharpe_min: float
+    long_short_effective_days_min: int
+    monotonicity_score_min: float
+    turnover_proxy_max: float
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a plain dictionary suitable for serialization and tracing."""
+
+        return asdict(self)
+
+
 # ============== Load helpers ==============
 def _load_toml(path: Path) -> dict[str, Any]:
     """Read a TOML file, accepting UTF-8 files with or without BOM."""
 
     return tomllib.loads(path.read_text(encoding="utf-8-sig"))
+
 
 def _get_gate_threshold(
     gate_raw: dict[str, Any],
@@ -170,7 +211,6 @@ def _load_gate_config(gate_path: Path) -> GateConfig:
     )
 
 
-
 def _load_sample_protocol_config(experiment_path: Path, raw: dict[str, Any]) -> dict[str, Any]:
     """Load inline or referenced sample protocol configuration."""
 
@@ -190,7 +230,45 @@ def _load_sample_protocol_config(experiment_path: Path, raw: dict[str, Any]) -> 
         return {}
     raise TypeError("sample_protocol_config must be a TOML table, a path string, or omitted")
 
-# ============== Public loader ==============
+
+def _load_block3_screening_config(raw: dict[str, Any]) -> Block3ScreeningConfig:
+    """Load Block3 screening configuration from parsed TOML content."""
+
+    screening_raw = raw["screening_gate"]
+    return Block3ScreeningConfig(
+        version=screening_raw["version"],
+        screening_gate_profile=screening_raw["screening_gate_profile"],
+        admission_horizon=screening_raw["admission_horizon"],
+        metric_compute_policy=screening_raw["metric_compute_policy"],
+        screening_sample_roles=list(screening_raw["screening_sample_roles"]),
+        expression_depth_max=int(screening_raw["expression_depth_max"]),
+        coverage_mean_min=float(screening_raw["coverage_mean_min"]),
+        effective_trade_days_min=int(screening_raw["effective_trade_days_min"]),
+        min_cross_section_size=int(screening_raw["min_cross_section_size"]),
+        finite_ratio_min=float(screening_raw["finite_ratio_min"]),
+        std_min=float(screening_raw["std_min"]),
+        unique_ratio_min=float(screening_raw["unique_ratio_min"]),
+        quantiles=int(screening_raw["quantiles"]),
+        admission_quality_metric=screening_raw["admission_quality_metric"],
+        admission_quality_min=float(screening_raw["admission_quality_min"]),
+        admission_stability_metric=screening_raw["admission_stability_metric"],
+        admission_stability_min=float(screening_raw["admission_stability_min"]),
+        batch_corr_threshold=float(screening_raw["batch_corr_threshold"]),
+        library_corr_threshold=float(screening_raw["library_corr_threshold"]),
+        correlation_min_overlap=int(screening_raw["correlation_min_overlap"]),
+        tie_break_order=list(screening_raw["tie_break_order"]),
+        replacement_quality_metric=screening_raw["replacement_quality_metric"],
+        replacement_absolute_quality_min=float(screening_raw["replacement_absolute_quality_min"]),
+        replacement_improvement_ratio_min=float(screening_raw["replacement_improvement_ratio_min"]),
+        correlated_factor_count_required=int(screening_raw["correlated_factor_count_required"]),
+        directional_long_short_sharpe_min=float(screening_raw["directional_long_short_sharpe_min"]),
+        long_short_effective_days_min=int(screening_raw["long_short_effective_days_min"]),
+        monotonicity_score_min=float(screening_raw["monotonicity_score_min"]),
+        turnover_proxy_max=float(screening_raw["turnover_proxy_max"]),
+    )
+
+
+# ============== Public loaders ==============
 def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
     """Load an experiment config and its referenced gate config."""
 
@@ -245,3 +323,9 @@ def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
         gate_config_hash=_hash_payload(gate_payload),
         config_hash=_hash_payload(payload),
     )
+
+
+def load_block3_screening_config(config_path: str | Path) -> Block3ScreeningConfig:
+    """Load the standalone Block3 screening gate configuration."""
+
+    return _load_block3_screening_config(_load_toml(Path(config_path).resolve()))

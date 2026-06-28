@@ -1,4 +1,4 @@
-"""
+﻿"""
 候选因子加载模块: 负责读取、校验并返回候选 JSONL 数据。
 边界约定:
 - forbidden fields、required fields 和重复 id 校验保留在这里
@@ -53,6 +53,7 @@ class Candidate:
     lookback_days: int
     created_at: str
     notes: str
+    economic_rationale: str = ""
 
     def as_dict(self) -> dict[str, object]:
         """转为字典: 输出时恢复外部使用的 id 字段名。"""
@@ -99,6 +100,10 @@ def _parse_candidate(raw: dict[str, object], config: ExperimentConfig) -> Candid
     except (TypeError, ValueError) as exc:
         raise CandidateValidationError("lookback_days must be an integer") from exc
 
+    economic_rationale = raw.get("economic_rationale", "")
+    if not isinstance(economic_rationale, str):
+        raise CandidateValidationError("economic_rationale must be a string")
+
     return Candidate(
         candidate_id=str(raw["id"]),
         name=str(raw["name"]),
@@ -109,6 +114,7 @@ def _parse_candidate(raw: dict[str, object], config: ExperimentConfig) -> Candid
         lookback_days=lookback_days,
         created_at=str(raw["created_at"]),
         notes=str(raw["notes"]),
+        economic_rationale=economic_rationale,
     )
 
 

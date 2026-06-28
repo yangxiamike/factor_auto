@@ -1,4 +1,4 @@
-import json
+﻿import json
 from pathlib import Path
 
 import pandas as pd
@@ -182,9 +182,21 @@ def test_cli_dataset_show_slices_outputs_mainboard_walkforward_protocol(tmp_path
     assert payload["slices"][-1]["role"] == "final_oos"
     assert payload["sample_protocol_hash"].startswith("sha256:")
 
-def test_cli_evaluate_exposes_engine_and_jobs_options() -> None:
+
+def test_cli_exposes_factor_evaluate_screening_command() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["factor", "evaluate", "--help"])
+    assert result.exit_code == 0
+    assert "--config" in result.stdout
+    assert "--candidates" in result.stdout
+    assert "--dataset" in result.stdout
+    assert "--output-dir" in result.stdout
+    assert "--screening-gate-config" in result.stdout
+
+
+def test_cli_exposes_factor_diagnose_legacy_command() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["factor", "diagnose", "--help"])
     assert result.exit_code == 0
     assert "--engine" in result.stdout
     assert "--jobs" in result.stdout
