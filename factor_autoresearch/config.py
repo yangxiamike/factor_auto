@@ -1,4 +1,4 @@
-"""Load experiment and gate configuration."""
+"""配置读取与运行参数模型。"""
 
 from __future__ import annotations
 
@@ -10,15 +10,125 @@ from pathlib import Path
 from typing import Any
 
 
-# ============== Hash helpers ==============
+# ============== 基础校验辅助 ==============
 def _hash_payload(payload: dict[str, Any]) -> str:
-    """Return a stable sha256 hash for a configuration payload."""
+    """生成稳定的配置哈希。"""
 
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
     return f"sha256:{sha256(canonical.encode('utf-8')).hexdigest()}"
 
 
-# ============== Config models ==============
+def _load_toml(path: Path) -> dict[str, Any]:
+    """读取 TOML 文件，兼容带 BOM 的 UTF-8 文本。"""
+
+    return tomllib.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def _require_table(raw: dict[str, Any], key: str) -> dict[str, Any]:
+    """读取 TOML 子表。"""
+
+    value = raw[key]
+    if not isinstance(value, dict):
+        raise TypeError(f"{key} must be a TOML table")
+    return value
+
+
+def _require_string(raw: dict[str, Any], key: str) -> str:
+    """读取字符串字段。"""
+
+    value = raw[key]
+    if not isinstance(value, str):
+        raise TypeError(f"{key} must be a string")
+    return value
+
+
+def _require_int(raw: dict[str, Any], key: str) -> int:
+    """读取整数字段。"""
+
+    value = raw[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{key} must be an integer")
+    return int(value)
+
+
+def _require_float(raw: dict[str, Any], key: str) -> float:
+    """读取浮点字段。"""
+
+    value = raw[key]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{key} must be a number")
+    return float(value)
+
+
+def _require_str_list(raw: dict[str, Any], key: str) -> list[str]:
+    """读取字符串列表。"""
+
+    value = raw[key]
+    if not isinstance(value, list):
+        raise TypeError(f"{key} must be a list of strings")
+    items: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise TypeError(f"{key} must be a list of strings")
+        items.append(item)
+    return items
+
+
+def _require_int_list(raw: dict[str, Any], key: str) -> list[int]:
+    """读取整数列表。"""
+
+    value = raw[key]
+    if not isinstance(value, list):
+        raise TypeError(f"{key} must be a list of integers")
+    items: list[int] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise TypeError(f"{key} must be a list of integers")
+        items.append(int(item))
+    return items
+
+
+# ============== 配置模型 ==============
+@dataclass(frozen=True)
+class Block3ScreeningConfig:
+    """Block3 screening gate 配置。"""
+
+    version: str
+    screening_gate_profile: str
+    admission_horizon: str
+    metric_compute_policy: str
+    screening_sample_roles: list[str]
+    expression_depth_max: int
+    coverage_mean_min: float
+    effective_trade_days_min: int
+    min_cross_section_size: int
+    finite_ratio_min: float
+    std_min: float
+    unique_ratio_min: float
+    quantiles: int
+    admission_quality_metric: str
+    admission_quality_min: float
+    admission_stability_metric: str
+    admission_stability_min: float
+    batch_corr_threshold: float
+    library_corr_threshold: float
+    correlation_min_overlap: int
+    tie_break_order: list[str]
+    replacement_quality_metric: str
+    replacement_absolute_quality_min: float
+    replacement_improvement_ratio_min: float
+    correlated_factor_count_required: int
+    directional_long_short_sharpe_min: float
+    long_short_effective_days_min: int
+    monotonicity_score_min: float
+    turnover_proxy_max: float
+
+    def as_dict(self) -> dict[str, Any]:
+        """转换为普通字典。"""
+
+        return asdict(self)
+
+
 @dataclass(frozen=True)
 class GateConfig:
     """Gate thresholds and scoring weights."""
@@ -108,12 +218,66 @@ class ExperimentConfig:
         return payload
 
 
-# ============== Load helpers ==============
-def _load_toml(path: Path) -> dict[str, Any]:
-    """Read a TOML file, accepting UTF-8 files with or without BOM."""
+# ============== Block3 读取 ==============
+def load_block3_screening_config(config_path: str | Path) -> Block3ScreeningConfig:
+    """读取 Block3 screening gate 配置。"""
 
-    return tomllib.loads(path.read_text(encoding="utf-8-sig"))
+    config_file = Path(config_path).resolve()
+    raw = _load_toml(config_file)
+    gate0 = _require_table(raw, "gate0")
+    gate1 = _require_table(raw, "gate1")
+    gate2 = _require_table(raw, "gate2")
+    gate2_replacement = _require_table(raw, "gate2_replacement")
+    gate3 = _require_table(raw, "gate3")
 
+    config = Block3ScreeningConfig(
+        version=_require_string(raw, "version"),
+        screening_gate_profile=_require_string(raw, "screening_gate_profile"),
+        admission_horizon=_require_string(raw, "admission_horizon"),
+        metric_compute_policy=_require_string(raw, "metric_compute_policy"),
+        screening_sample_roles=_require_str_list(raw, "screening_sample_roles"),
+        expression_depth_max=_require_int(gate0, "expression_depth_max"),
+        coverage_mean_min=_require_float(gate0, "coverage_mean_min"),
+        effective_trade_days_min=_require_int(gate0, "effective_trade_days_min"),
+        min_cross_section_size=_require_int(gate0, "min_cross_section_size"),
+        finite_ratio_min=_require_float(gate0, "finite_ratio_min"),
+        std_min=_require_float(gate0, "std_min"),
+        unique_ratio_min=_require_float(gate0, "unique_ratio_min"),
+        quantiles=_require_int(gate0, "quantiles"),
+        admission_quality_metric=_require_string(gate1, "admission_quality_metric"),
+        admission_quality_min=_require_float(gate1, "admission_quality_min"),
+        admission_stability_metric=_require_string(gate1, "admission_stability_metric"),
+        admission_stability_min=_require_float(gate1, "admission_stability_min"),
+        batch_corr_threshold=_require_float(gate2, "batch_corr_threshold"),
+        library_corr_threshold=_require_float(gate2, "library_corr_threshold"),
+        correlation_min_overlap=_require_int(gate2, "correlation_min_overlap"),
+        tie_break_order=_require_str_list(gate2, "tie_break_order"),
+        replacement_quality_metric=_require_string(
+            gate2_replacement, "replacement_quality_metric"
+        ),
+        replacement_absolute_quality_min=_require_float(
+            gate2_replacement, "replacement_absolute_quality_min"
+        ),
+        replacement_improvement_ratio_min=_require_float(
+            gate2_replacement, "replacement_improvement_ratio_min"
+        ),
+        correlated_factor_count_required=_require_int(
+            gate2_replacement, "correlated_factor_count_required"
+        ),
+        directional_long_short_sharpe_min=_require_float(
+            gate3, "directional_long_short_sharpe_min"
+        ),
+        long_short_effective_days_min=_require_int(gate3, "long_short_effective_days_min"),
+        monotonicity_score_min=_require_float(gate3, "monotonicity_score_min"),
+        turnover_proxy_max=_require_float(gate3, "turnover_proxy_max"),
+    )
+
+    if config.admission_horizon != "5d":
+        raise ValueError("admission_horizon must be 5d")
+    return config
+
+
+# ============== 现有 gate 读取 ==============
 def _get_gate_threshold(
     gate_raw: dict[str, Any],
     new_key: str,
@@ -170,7 +334,7 @@ def _load_gate_config(gate_path: Path) -> GateConfig:
     )
 
 
-
+# ============== 实验配置读取 ==============
 def _load_sample_protocol_config(experiment_path: Path, raw: dict[str, Any]) -> dict[str, Any]:
     """Load inline or referenced sample protocol configuration."""
 
@@ -190,7 +354,7 @@ def _load_sample_protocol_config(experiment_path: Path, raw: dict[str, Any]) -> 
         return {}
     raise TypeError("sample_protocol_config must be a TOML table, a path string, or omitted")
 
-# ============== Public loader ==============
+
 def load_experiment_config(config_path: str | Path) -> ExperimentConfig:
     """Load an experiment config and its referenced gate config."""
 
