@@ -1,4 +1,4 @@
-﻿.DS_Store
+.DS_Store
 .venv/
 .pytest_cache/
 __pycache__/
@@ -7,3 +7,11 @@ __pycache__/
 
 # Large frozen local dataset
 datasets/mainboard_mining_v1/
+
+# Local datasets and run artifacts
+datasets/**/panel.parquet
+datasets/**/forward_returns.parquet
+runs/**/factors/
+runs/**/results/
+runs/**/logs/
+runs/**/benchmark.json
