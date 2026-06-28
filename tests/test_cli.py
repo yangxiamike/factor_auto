@@ -200,3 +200,118 @@ def test_cli_exposes_factor_diagnose_legacy_command() -> None:
     assert result.exit_code == 0
     assert "--engine" in result.stdout
     assert "--jobs" in result.stdout
+
+
+def test_cli_exposes_asset_command_group() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["asset", "--help"])
+    assert result.exit_code == 0
+    assert "ingest-block3" in result.stdout
+    assert "build-test-library" in result.stdout
+
+
+
+def test_cli_asset_list_outputs_stable_json(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["asset", "list", "--asset-store", str(tmp_path / "factor_assets")])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["command"] == "asset.list"
+    assert payload["items"] == []
+    assert payload["total"] == 0
+
+
+
+def test_cli_asset_show_missing_factor_returns_json_error(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["asset", "show", "missing_factor", "--asset-store", str(tmp_path / "factor_assets")],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is False
+    assert payload["command"] == "asset.show"
+    assert "factor not found" in payload["error"]["message"]
+
+
+
+def test_cli_asset_build_test_library_outputs_json_and_writes_asset_log(tmp_path: Path) -> None:
+    runner = CliRunner()
+    asset_store = tmp_path / "factor_assets"
+    result = runner.invoke(
+        app,
+        [
+            "asset",
+            "build-test-library",
+            "--asset-store",
+            str(asset_store),
+            "--library-size",
+            "3",
+            "--verbose",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["command"] == "asset.build-test-library"
+    assert payload["library_size"] == 3
+    assert (asset_store / "logs" / "asset.log").exists()
+
+
+def test_cli_asset_build_test_library_forwards_alignment_scope_options(tmp_path: Path, monkeypatch) -> None:
+    runner = CliRunner()
+    asset_store = tmp_path / "factor_assets"
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir(parents=True)
+    config_path = tmp_path / "experiment.toml"
+    config_path.write_text("experiment_id = \"fixture\"\n", encoding="utf-8")
+    screening_path = tmp_path / "screening.toml"
+    screening_path.write_text("screening_sample_roles = [\"full_sample\"]\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    class _Summary:
+        def as_dict(self) -> dict[str, object]:
+            return {
+                "asset_store_dir": str(asset_store),
+                "factor_ids": ["lib_factor_001"],
+                "library_size": 1,
+                "source_run_id": "build_test_library_fixture",
+            }
+
+    def _fake_build_test_library(asset_store_dir, **kwargs):
+        captured["asset_store_dir"] = asset_store_dir
+        captured.update(kwargs)
+        return _Summary()
+
+    monkeypatch.setattr("factor_autoresearch.cli.build_test_library", _fake_build_test_library)
+
+    result = runner.invoke(
+        app,
+        [
+            "asset",
+            "build-test-library",
+            "--asset-store",
+            str(asset_store),
+            "--library-size",
+            "1",
+            "--dataset",
+            str(dataset_dir),
+            "--config",
+            str(config_path),
+            "--screening-gate-config",
+            str(screening_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert captured["asset_store_dir"] == asset_store
+    assert captured["dataset_path"] == dataset_dir
+    assert captured["config_path"] == config_path
+    assert captured["screening_gate_config_path"] == screening_path

@@ -11,3 +11,12 @@ def test_configure_logging_creates_file_handler(tmp_path: Path) -> None:
     logger.info("hello", extra={"run_id": "run1", "candidate_id": "c1", "stage": "test"})
     configure_logging(run_dir=run_dir, verbose=False, quiet=False)
     assert (run_dir / "logs" / "evaluate.log").exists()
+
+
+def test_configure_logging_supports_custom_log_name(tmp_path: Path) -> None:
+    run_dir = tmp_path / "asset_run"
+    configure_logging(run_dir=run_dir, verbose=False, quiet=False, log_name="asset.log")
+    logger = logging.getLogger("factor_autoresearch.asset")
+    logger.info("asset", extra={"run_id": "run2", "candidate_id": "a1", "stage": "asset"})
+    configure_logging(run_dir=run_dir, verbose=False, quiet=False)
+    assert (run_dir / "logs" / "asset.log").exists()
