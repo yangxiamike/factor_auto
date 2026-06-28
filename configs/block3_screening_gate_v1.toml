@@ -1,39 +1,35 @@
+﻿[screening_gate]
 version = "block3_screening_gate_v1"
-screening_gate_profile = "block3_screening_gate"
+screening_gate_profile = "initial_research_factorminer_like_v1"
 admission_horizon = "5d"
 metric_compute_policy = "staged"
-screening_sample_roles = ["research", "review"]
+screening_sample_roles = ["validation"]
 
-[gate0]
 expression_depth_max = 8
-coverage_mean_min = 0.65
-effective_trade_days_min = 20
-min_cross_section_size = 80
-finite_ratio_min = 0.95
-std_min = 0.01
-unique_ratio_min = 0.20
+coverage_mean_min = 0.70
+effective_trade_days_min = 120
+min_cross_section_size = 100
+finite_ratio_min = 0.99
+std_min = 1e-12
+unique_ratio_min = 0.01
 quantiles = 5
 
-[gate1]
-admission_quality_metric = "quality_score"
-admission_quality_min = 0.75
-admission_stability_metric = "stability_score"
-admission_stability_min = 0.60
+admission_quality_metric = "directional_rankic_mean"
+admission_quality_min = 0.04
+admission_stability_metric = "directional_rankic_ir"
+admission_stability_min = 0.50
 
-[gate2]
-batch_corr_threshold = 0.85
-library_corr_threshold = 0.80
-correlation_min_overlap = 30
-tie_break_order = ["quality_score", "stability_score", "coverage_mean"]
+batch_corr_threshold = 0.50
+library_corr_threshold = 0.50
+correlation_min_overlap = 10000
+tie_break_order = ["directional_rankic_mean", "directional_rankic_ir", "coverage_mean"]
 
-[gate2_replacement]
-replacement_quality_metric = "quality_score"
-replacement_absolute_quality_min = 0.80
-replacement_improvement_ratio_min = 0.10
-correlated_factor_count_required = 2
+replacement_quality_metric = "directional_rankic_mean"
+replacement_absolute_quality_min = 0.10
+replacement_improvement_ratio_min = 1.30
+correlated_factor_count_required = 1
 
-[gate3]
-directional_long_short_sharpe_min = 0.30
-long_short_effective_days_min = 15
-monotonicity_score_min = 0.55
-turnover_proxy_max = 2.0
+directional_long_short_sharpe_min = 1.00
+long_short_effective_days_min = 50
+monotonicity_score_min = 0.30
+turnover_proxy_max = 0.70

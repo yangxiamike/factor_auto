@@ -1,6 +1,6 @@
-"""
-CLI 入口模块: 负责解析命令行参数、加载实验配置，并调用数据集准备、
-因子校验、因子评估与实验清理等流程能力。
+﻿"""
+CLI 入口模块: 负责解析命令行参数，并调度 dataset、screening 和 legacy diagnose 流程。
+不在这里拼装样本视图，也不在这里计算 Gate 指标。
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from typing import Annotated
 
 import typer
 
+from factor_autoresearch.block3_screening_runner import run_block3_screening
 from factor_autoresearch.cleanup import clean_experiment_outputs
 from factor_autoresearch.config import load_experiment_config
 from factor_autoresearch.context import EvaluationContext
@@ -32,10 +33,12 @@ app.add_typer(experiment_app, name="experiment")
 
 # ============== 默认配置 ==============
 DEFAULT_CONFIG = Path("configs/csi500_ohlcv_sandbox_v1.toml")
+DEFAULT_SCREENING_GATE_CONFIG = Path("configs/block3_screening_gate_v1.toml")
 
 
 def _echo_json(payload: dict[str, object]) -> None:
     """输出 JSON: 统一命令行结果的 JSON 打印方式。"""
+
     typer.echo(json.dumps(payload, ensure_ascii=False))
 
 
@@ -129,6 +132,37 @@ def factor_validate(
 def factor_evaluate(
     dataset: Annotated[Path, typer.Option(exists=True, file_okay=False)] = ...,
     candidates: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = ...,
+    output_dir: Annotated[Path, typer.Option(file_okay=False)] = ...,
+    config: Annotated[Path, typer.Option(exists=True)] = DEFAULT_CONFIG,
+    screening_gate_config: Annotated[Path, typer.Option(exists=True)] = DEFAULT_SCREENING_GATE_CONFIG,
+) -> None:
+    """运行 Block3 screening: 作为研究因子入库筛选的主入口。"""
+    summary = run_block3_screening(
+        config_path=config,
+        candidates_path=candidates,
+        dataset_path=dataset,
+        output_dir=output_dir,
+        screening_gate_config_path=screening_gate_config,
+    )
+    _echo_json(
+        {
+            "output_dir": str(summary.output_dir),
+            "evaluation_log": str(summary.evaluation_log_path),
+            "research_factor_library": str(summary.research_factor_library_path),
+            "replacement_queue": str(summary.replacement_queue_path),
+            "total_candidates": summary.total_candidates,
+            "admitted": summary.admitted_count,
+            "rejected": summary.reject_count,
+            "duplicates": summary.duplicate_count,
+            "replace_candidates": summary.replace_candidate_count,
+        }
+    )
+
+
+@factor_app.command("diagnose")
+def factor_diagnose(
+    dataset: Annotated[Path, typer.Option(exists=True, file_okay=False)] = ...,
+    candidates: Annotated[Path, typer.Option(exists=True, dir_okay=False)] = ...,
     run_id: Annotated[str, typer.Option()] = ...,
     config: Annotated[Path, typer.Option(exists=True)] = DEFAULT_CONFIG,
     registry: Annotated[Path, typer.Option()] = Path("candidate_factors/registry.jsonl"),
@@ -138,7 +172,7 @@ def factor_evaluate(
     verbose: Annotated[bool, typer.Option("--verbose")] = False,
     quiet: Annotated[bool, typer.Option("--quiet")] = False,
 ) -> None:
-    """评估因子: 运行候选因子批量评估并输出本次 run 的产物位置。"""
+    """旧评估诊断入口: 保留 Evaluator 链路用于诊断和回溯。"""
     experiment_config = load_experiment_config(config)
     context = EvaluationContext(
         config=experiment_config,
@@ -152,8 +186,7 @@ def factor_evaluate(
         verbose=verbose,
         quiet=quiet,
     )
-    evaluator = Evaluator(context)
-    artifacts = evaluator.evaluate_batch()
+    artifacts = Evaluator(context).evaluate_batch()
     _echo_json(
         {
             "run_id": run_id,

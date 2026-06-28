@@ -1,4 +1,9 @@
-"""候选因子读取与校验。"""
+﻿"""
+候选因子加载模块: 负责读取、校验并返回候选 JSONL 数据。
+边界约定:
+- forbidden fields、required fields 和重复 id 校验保留在这里
+- 下游默认接收已经过结构校验的 Candidate 对象
+"""
 
 from __future__ import annotations
 
@@ -31,13 +36,13 @@ REQUIRED_FIELDS = {
 
 
 class CandidateValidationError(ValueError):
-    """候选校验异常。"""
+    """候选校验异常: 候选 JSONL 内容不符合约束时抛出。"""
 
 
 # ============== 数据结构 ==============
 @dataclass(frozen=True)
 class Candidate:
-    """候选因子记录。"""
+    """候选因子: 表示单条通过结构校验的候选记录。"""
 
     candidate_id: str
     name: str
@@ -51,7 +56,7 @@ class Candidate:
     economic_rationale: str = ""
 
     def as_dict(self) -> dict[str, object]:
-        """转成字典，恢复外部使用的 id 字段名。"""
+        """转为字典: 输出时恢复外部使用的 id 字段名。"""
 
         payload = asdict(self)
         payload["id"] = payload.pop("candidate_id")
@@ -60,7 +65,7 @@ class Candidate:
 
 @dataclass(frozen=True)
 class InvalidCandidateRecord:
-    """无效候选记录。"""
+    """无效候选记录: 记录失败桶和详细报错信息。"""
 
     candidate_id: str
     failure_bucket: str
@@ -69,7 +74,7 @@ class InvalidCandidateRecord:
 
 # ============== 解析函数 ==============
 def _parse_candidate(raw: dict[str, object], config: ExperimentConfig) -> Candidate:
-    """解析单条候选记录。"""
+    """解析候选: 校验单条记录并构造成 Candidate。"""
 
     forbidden = FORBIDDEN_FIELDS.intersection(raw.keys())
     if forbidden:
@@ -115,7 +120,7 @@ def _parse_candidate(raw: dict[str, object], config: ExperimentConfig) -> Candid
 
 # ============== 加载入口 ==============
 def load_candidates(path: str | Path, config: ExperimentConfig) -> list[Candidate]:
-    """读取候选文件，若有无效记录则直接报错。"""
+    """加载候选: 读取文件并在存在无效记录时直接失败。"""
 
     candidates, invalid_records = load_candidate_batch(path, config)
     if invalid_records:
@@ -124,11 +129,8 @@ def load_candidates(path: str | Path, config: ExperimentConfig) -> list[Candidat
     return candidates
 
 
-def load_candidate_batch(
-    path: str | Path,
-    config: ExperimentConfig,
-) -> tuple[list[Candidate], list[InvalidCandidateRecord]]:
-    """批量读取候选文件，返回有效与无效记录。"""
+def load_candidate_batch(path: str | Path, config: ExperimentConfig) -> tuple[list[Candidate], list[InvalidCandidateRecord]]:
+    """批量加载候选: 返回有效候选和无效记录列表。"""
 
     candidate_path = Path(path)
     if not candidate_path.exists():
