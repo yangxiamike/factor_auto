@@ -96,6 +96,7 @@ class Block3ScreeningWriter:
             "decision": decision.decision,
             "reject_reason": decision.reject_reason,
             "metrics": gate_metrics,
+            "library_value_status": candidate_payload.get("library_value_status"),
             "matched_factor_id": matched_factor_id,
             "agent_note": candidate_payload.get("agent_note"),
             "created_at": created_at,
@@ -138,3 +139,4 @@ class Block3ScreeningWriter:
                 "created_at": created_at,
             }
             _append_jsonl(self.replacement_queue_path, replacement_record)
+
